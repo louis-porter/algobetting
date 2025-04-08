@@ -50,7 +50,9 @@ class RecentMatchDataScraper:
     def random_delay(self, min_seconds=3, max_seconds=5):
         time.sleep(random.uniform(min_seconds, max_seconds))
 
-    def extract_team_stats_from_table(self, soup, home_team, away_team, match_date, division, url, table_pattern, stat_fields):
+
+    def extract_player_stats_from_table(self, soup, home_team, away_team, match_date, division, url, table_pattern, stat_fields=None):
+
         # Find tables matching the pattern
         pattern = re.compile(table_pattern)
         stats_tables = soup.find_all('table', id=pattern)
@@ -69,58 +71,125 @@ class RecentMatchDataScraper:
                 elif away_team and away_team in caption_text:
                     away_team_table = table
         
-        home_df = pd.DataFrame()
-        away_df = pd.DataFrame()
+        home_players_df = pd.DataFrame()
+        away_players_df = pd.DataFrame()
         
-        # Extract home team stats
+        # Extract home team player stats
         if home_team_table:
-            home_stats = {
-                'team': home_team,
-                'is_home': True,
-                'match_date': match_date,
-                'division': division,
-                'season': season,
-                'match_url': url
-            }
+            # Get headers to know which stats are available
+            headers = []
+            header_row = home_team_table.find('thead').find_all('th')
+            for header in header_row:
+                data_stat = header.get('data-stat')
+                if data_stat:
+                    headers.append(data_stat)
             
-            # Add specific stats from the table footer
-            for field in stat_fields:
-                cell = home_team_table.find('tfoot').find('td', {'data-stat': field})
-                if cell:
-                    home_stats[field] = cell.get_text(strip=True)
+            # If stat_fields is None, use all available stats except basic info fields
+            if stat_fields is None:
+                # Exclude common non-stat fields
+                excluded_fields = []#['player', 'shirtnumber', 'nationality', 'position', 'age', 'minutes', 'games', 'games_starts']
+                stat_fields = [h for h in headers if h not in excluded_fields]
             
-            home_df = pd.DataFrame([home_stats])
+            # Get player rows - each tbody row is a player
+            player_rows = home_team_table.find('tbody').find_all('tr')
+            home_players_data = []
+            
+            for row in player_rows:
+                # Skip summary rows or rows without data-stat
+                if 'class' in row.attrs and 'divider' in row['class']:
+                    continue
+                    
+                # Extract player name and other data
+                player_data = {
+                    'team': home_team,
+                    'opponent': away_team,
+                    'is_home': True,
+                    'match_date': match_date,
+                    'division': division, 
+                    'season': self.season,
+                    'match_url': url
+                }
+                
+                # Get player name
+                player_cell = row.find('th', {'data-stat': 'player'})
+                if player_cell:
+                    player_data['player'] = player_cell.get_text(strip=True)
+                
+                # Extract all available stats for the player
+                for field in headers:
+                    cell = row.find('td', {'data-stat': field})
+                    if cell:
+                        player_data[field] = cell.get_text(strip=True)
+                
+                home_players_data.append(player_data)
+            
+            if home_players_data:
+                home_players_df = pd.DataFrame(home_players_data)
         else:
             print(f"⚠ No {table_pattern} table found for home team: {home_team}")
         
-        # Extract away team stats
+        # Extract away team player stats
         if away_team_table:
-            away_stats = {
-                'team': away_team,
-                'is_home': False,
-                'match_date': match_date,
-                'division': division,
-                'season': season,
-                'match_url': url
-            }
+            # Get headers to know which stats are available
+            headers = []
+            header_row = away_team_table.find('thead').find_all('th')
+            for header in header_row:
+                data_stat = header.get('data-stat')
+                if data_stat:
+                    headers.append(data_stat)
             
-            # Add specific stats from the table footer
-            for field in stat_fields:
-                cell = away_team_table.find('tfoot').find('td', {'data-stat': field})
-                if cell:
-                    away_stats[field] = cell.get_text(strip=True)
+            # If stat_fields is None, use all available stats except basic info fields
+            if stat_fields is None:
+                # Exclude common non-stat fields
+                excluded_fields = []#['player', 'shirtnumber', 'nationality', 'position', 'age', 'minutes', 'games', 'games_starts']
+                stat_fields = [h for h in headers if h not in excluded_fields]
             
-            away_df = pd.DataFrame([away_stats])
+            # Get player rows - each tbody row is a player
+            player_rows = away_team_table.find('tbody').find_all('tr')
+            away_players_data = []
+            
+            for row in player_rows:
+                # Skip summary rows or rows without data-stat
+                if 'class' in row.attrs and 'divider' in row['class']:
+                    continue
+                    
+                # Extract player name and other data
+                player_data = {
+                    'team': away_team,
+                    'opponent': home_team,
+                    'is_home': False,
+                    'match_date': match_date,
+                    'division': division,
+                    'season': self.season,
+                    'match_url': url
+                }
+                
+                # Get player name
+                player_cell = row.find('th', {'data-stat': 'player'})
+                if player_cell:
+                    player_data['player'] = player_cell.get_text(strip=True)
+                
+                # Extract all available stats for the player
+                for field in headers:
+                    cell = row.find('td', {'data-stat': field})
+                    if cell:
+                        player_data[field] = cell.get_text(strip=True)
+                
+                away_players_data.append(player_data)
+            
+            if away_players_data:
+                away_players_df = pd.DataFrame(away_players_data)
         else:
             print(f"⚠ No {table_pattern} table found for away team: {away_team}")
         
-        return home_df, away_df
+        return home_players_df, away_players_df
 
-    def get_match_data(self, url):
+
+    def get_match_player_data(self, url):
         self.random_delay()
         
         try:
-            print(f"Fetching data with Selenium from: {url}")
+            print(f"Fetching player data with Selenium from: {url}")
             # Use Selenium to navigate to the page
             self.driver.get(url)
             self.random_delay(2, 3)  # Allow page to fully load
@@ -155,175 +224,83 @@ class RecentMatchDataScraper:
             division_link = soup.find('a', href=lambda x: x and '/comps/' in x and '-Stats' in x)
             division = division_link.text.strip() if division_link else None
             
-            # Extract summary stats
-            summary_fields = ['shots', 'shots_on_target', 'xg', 'npxg', 'cards_red']
-            home_summary_df, away_summary_df = self.extract_team_stats_from_table(
-                soup, home_team, away_team, match_date, division, url, 
-                r'stats_[a-z0-9]+_summary', summary_fields
-            )
+            # Create dictionaries to store player data for each team
+            # Key will be (player, team, match_date)
+            home_player_data = {}
+            away_player_data = {}
             
-            # Extract possession stats
-            possession_fields = ['touches', 'touches_att_pen_area', 'touches_att_3rd']
-            home_possession_df, away_possession_df = self.extract_team_stats_from_table(
-                soup, home_team, away_team, match_date, division, url, 
-                r'stats_[a-z0-9]+_possession', possession_fields
-            )
-
-            # Extract penalty stats
-            misc_fields = ['pens_won']
-            home_misc_df, away_misc_df = self.extract_team_stats_from_table(
-                soup, home_team, away_team, match_date, division, url, 
-                r'stats_[a-z0-9]+_misc', misc_fields
-            )
-
-            # Extract corners
-            pass_types_fields = ['corner_kicks']
-            home_pass_types_df, away_pass_types_df = self.extract_team_stats_from_table(
-                soup, home_team, away_team, match_date, division, url, 
-                r'stats_[a-z0-9]+_passing_types', pass_types_fields
-            )
-
-            # Extract goalkeeper stats with reversed team attribution
-            keeper_pattern = re.compile(r'keeper_stats_[a-z0-9]+')
-            keeper_tables = soup.find_all('table', id=keeper_pattern)
-
-            home_keeper_table = None
-            away_keeper_table = None
-
-            # Find the keeper tables for each team
-            for table in keeper_tables:
-                caption = table.find("caption")
-                if caption and caption.text:
-                    caption_text = caption.text.strip()
+            # Helper function to update player dictionaries
+            def update_player_dict(player_dict, player_df):
+                if player_df.empty:
+                    return
                     
-                    if home_team and home_team in caption_text:
-                        home_keeper_table = table
-                    elif away_team and away_team in caption_text:
-                        away_keeper_table = table
-
-            # Extract away team's PSxG from home keeper table (reverse attribution)
-            if home_keeper_table:
-                # Look for the PSxG cell using the correct data-stat attribute
-                psxg_cell = home_keeper_table.find('td', {'data-stat': 'gk_psxg'})
-                if psxg_cell:
-                    away_psxg = psxg_cell.get_text(strip=True)
-                    # Add to away_summary_df if needed
-                    if not away_summary_df.empty:
-                        away_summary_df['psxg'] = away_psxg
-
-            # Extract home team's PSxG from away keeper table (reverse attribution)
-            if away_keeper_table:
-                # Look for the PSxG cell using the correct data-stat attribute
-                psxg_cell = away_keeper_table.find('td', {'data-stat': 'gk_psxg'})
-                if psxg_cell:
-                    home_psxg = psxg_cell.get_text(strip=True)
-                    # Add to home_summary_df if needed
-                    if not home_summary_df.empty:
-                        home_summary_df['psxg'] = home_psxg
-            # Merge all DataFrames into one match DataFrame
-            try:
-                # First, merge home stats from different tables
-                home_df = home_summary_df.copy()
-                
-                if not home_possession_df.empty:
-                    # Make sure we're merging on all common columns to avoid duplicates
-                    merge_cols = [col for col in home_df.columns if col in home_possession_df.columns]
-                    if merge_cols:
-                        home_df = pd.merge(home_df, home_possession_df, on=merge_cols, how='outer')
-                    else:
-                        # If no common columns, we can just add the new columns
-                        for col in home_possession_df.columns:
-                            if col not in home_df.columns:
-                                home_df[col] = home_possession_df[col].values[0]
-                
-                if not home_misc_df.empty:
-                    # Make sure we're merging on all common columns to avoid duplicates
-                    merge_cols = [col for col in home_df.columns if col in home_misc_df.columns]
-                    if merge_cols:
-                        home_df = pd.merge(home_df, home_misc_df, on=merge_cols, how='outer')
-                    else:
-                        # If no common columns, we can just add the new columns
-                        for col in home_misc_df.columns:
-                            if col not in home_df.columns:
-                                home_df[col] = home_misc_df[col].values[0]
-                
-                # Add corners data to home_df
-                if not home_pass_types_df.empty:
-                    merge_cols = [col for col in home_df.columns if col in home_pass_types_df.columns]
-                    if merge_cols:
-                        home_df = pd.merge(home_df, home_pass_types_df, on=merge_cols, how='outer')
-                    else:
-                        for col in home_pass_types_df.columns:
-                            if col not in home_df.columns:
-                                home_df[col] = home_pass_types_df[col].values[0]
-                
-                # Then, merge away stats from different tables
-                away_df = away_summary_df.copy()
-                
-                if not away_possession_df.empty:
-                    merge_cols = [col for col in away_df.columns if col in away_possession_df.columns]
-                    if merge_cols:
-                        away_df = pd.merge(away_df, away_possession_df, on=merge_cols, how='outer')
-                    else:
-                        for col in away_possession_df.columns:
-                            if col not in away_df.columns:
-                                away_df[col] = away_possession_df[col].values[0]
-                
-                if not away_misc_df.empty:
-                    merge_cols = [col for col in away_df.columns if col in away_misc_df.columns]
-                    if merge_cols:
-                        away_df = pd.merge(away_df, away_misc_df, on=merge_cols, how='outer')
-                    else:
-                        for col in away_misc_df.columns:
-                            if col not in away_df.columns:
-                                away_df[col] = away_misc_df[col].values[0]
-
-                # Add corners data to away_df
-                if not away_pass_types_df.empty:
-                    merge_cols = [col for col in away_df.columns if col in away_pass_types_df.columns]
-                    if merge_cols:
-                        away_df = pd.merge(away_df, away_pass_types_df, on=merge_cols, how='outer')
-                    else:
-                        for col in away_pass_types_df.columns:
-                            if col not in away_df.columns:
-                                away_df[col] = away_pass_types_df[col].values[0]
-                
-                # Add opposition stats to each team's dataframe
-                if not home_df.empty and not away_df.empty:
-                    # Create copies of the dataframes to avoid modification during iteration
-                    home_df_copy = home_df.copy()
-                    away_df_copy = away_df.copy()
-
-                    # Add away team name as opp_team to home_df
-                    if 'team' in away_df_copy.columns:
-                        home_df['opp_team'] = away_df_copy['team'].values[0]
-
-                    # Add away team stats as opposition stats to home_df
-                    for col in away_df_copy.columns:
-                        if col not in ['match_date', 'team', 'opponent', 'division', 'match_url']:
-                            home_df[f'opp_{col}'] = away_df_copy[col].values[0]
-
-                    # Add home team name as opp_team to away_df
-                    if 'team' in home_df_copy.columns:
-                        away_df['opp_team'] = home_df_copy['team'].values[0]
+                for _, row in player_df.iterrows():
+                    player_key = (row['player'], row['team'], row['match_date'])
                     
-                    # Add home team stats as opposition stats to away_df
-                    for col in home_df_copy.columns:
-                        if col not in ['match_date', 'team', 'opponent', 'division', 'match_url']:
-                            away_df[f'opp_{col}'] = home_df_copy[col].values[0]
+                    if player_key not in player_dict:
+                        # Initialize with all metadata
+                        player_dict[player_key] = {
+                            'player': row['player'],
+                            'team': row['team'],
+                            'opponent': row['opponent'],
+                            'is_home': row['is_home'],
+                            'match_date': row['match_date'],
+                            'division': row['division'],
+                            'season': row.get('season', self.season),
+                            'match_url': row['match_url']
+                        }
+                    
+                    # Add all stats from this table
+                    for col, value in row.items():
+                        if col not in ['player', 'team', 'opponent', 'is_home', 'match_date', 'division', 'season', 'match_url']:
+                            # Only update if the field doesn't exist or was empty/NaN
+                            if col not in player_dict[player_key] or pd.isna(player_dict[player_key][col]):
+                                player_dict[player_key][col] = value
+            
+            # Extract and process table types
+            table_patterns = [
+                ('summary', r'stats_[a-z0-9]+_summary'),
+                ('possession', r'stats_[a-z0-9]+_possession'),
+                ('passing', r'stats_[a-z0-9]+_passing'),
+                ('passing_types', r'stats_[a-z0-9]+_passing_types'),
+                ('defense', r'stats_[a-z0-9]+_defense'),
+                ('misc', r'stats_[a-z0-9]+_misc')
+                #('keeper', r'keeper_stats_[a-z0-9]+')
+            ]
+            
+            for stat_type, pattern in table_patterns:
+                home_df, away_df = self.extract_player_stats_from_table(
+                    soup, home_team, away_team, match_date, division, url, pattern
+                )
                 
-                # Combine home and away into a single match DataFrame
-                match_df = pd.concat([home_df, away_df], ignore_index=True)
-                return match_df
-
-            except Exception as e:
-                print(f"Error merging match data: {e}")
-                import traceback
-                traceback.print_exc()
+                # Add table type as a column for debugging if needed
+                if not home_df.empty:
+                    home_df['stat_table'] = stat_type
+                if not away_df.empty:
+                    away_df['stat_table'] = stat_type
+                    
+                # Update player dictionaries
+                update_player_dict(home_player_data, home_df)
+                update_player_dict(away_player_data, away_df)
+            
+            # Convert dictionaries to DataFrames
+            home_players_df = pd.DataFrame(list(home_player_data.values()))
+            away_players_df = pd.DataFrame(list(away_player_data.values()))
+            
+            # Combine home and away
+            all_players_df = pd.concat([home_players_df, away_players_df], ignore_index=True)
+            
+            if not all_players_df.empty:
+                print(f"Collected data for {len(all_players_df)} players")
+                return all_players_df
+            else:
+                print("No player data found")
                 return None
-                            
+                
         except Exception as e:
-            print(f"Error processing match data: {e}")
+            print(f"Error processing player match data: {e}")
+            import traceback
+            traceback.print_exc()
             return None
 
     def find_fixtures_table(self):
