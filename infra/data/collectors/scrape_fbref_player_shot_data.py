@@ -273,12 +273,6 @@ class RecentMatchDataScraper:
                     soup, home_team, away_team, match_date, division, url, pattern
                 )
                 
-                # Add table type as a column for debugging if needed
-                if not home_df.empty:
-                    home_df['stat_table'] = stat_type
-                if not away_df.empty:
-                    away_df['stat_table'] = stat_type
-                    
                 # Update player dictionaries
                 update_player_dict(home_player_data, home_df)
                 update_player_dict(away_player_data, away_df)
@@ -419,7 +413,7 @@ class RecentMatchDataScraper:
                 matches_processed += 1
                 print(f"\nProcessing match {matches_processed}/{len(match_urls)} from {match_date_text}: {match_url}")
                 
-                match_data = self.get_match_data(match_url)
+                match_data = self.get_match_player_data(match_url)
                 if match_data is not None:
                     self.match_data.append(match_data)
                     matches_collected += 1
@@ -533,8 +527,8 @@ if __name__ == "__main__":
     # Set the season and number of days to look back
     season = "2024-2025"  # Update with current season
     league = "Premier-League"
-    days_back = 365  # Get matches from last 3 days
-    table_name = "fbref_match_summary"  # Table name in the database
+    days_back = 5  # Get matches from last 3 days
+    table_name = "fbref_player_stats"  # Table name in the database
     db_path = r"C:\Users\Owner\dev\algobetting\infra\data\db\algobetting.db"  # SQLite database file path
     
     # Check and notify about required packages
