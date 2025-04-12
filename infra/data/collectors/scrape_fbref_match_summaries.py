@@ -156,7 +156,7 @@ class RecentMatchDataScraper:
             division = division_link.text.strip() if division_link else None
             
             # Extract summary stats
-            summary_fields = ['shots', 'shots_on_target', 'xg', 'npxg', 'cards_red']
+            summary_fields = ['goals', 'shots', 'shots_on_target', 'xg', 'npxg', 'cards_red']
             home_summary_df, away_summary_df = self.extract_team_stats_from_table(
                 soup, home_team, away_team, match_date, division, url, 
                 r'stats_[a-z0-9]+_summary', summary_fields

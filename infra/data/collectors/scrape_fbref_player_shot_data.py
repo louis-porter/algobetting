@@ -527,7 +527,7 @@ if __name__ == "__main__":
     # Set the season and number of days to look back
     season = "2024-2025"  # Update with current season
     league = "Premier-League"
-    days_back = 5  # Get matches from last 3 days
+    days_back = 365  # Get matches from last 3 days
     table_name = "fbref_player_stats"  # Table name in the database
     db_path = r"C:\Users\Owner\dev\algobetting\infra\data\db\algobetting.db"  # SQLite database file path
     
