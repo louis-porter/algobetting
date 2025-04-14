@@ -33,7 +33,9 @@ class RecentMatchDataScraper:
         self.table_name = table_name
         self.setup_driver(headless)
         self.cutoff_date = datetime.now() - timedelta(days=days_back)
+        self.existing_urls = self.get_existing_urls()
         print(f"Scraping matches played after: {self.cutoff_date.strftime('%Y-%m-%d')}")
+        print(f"Found {len(self.existing_urls)} existing match URLs in the database")
         
     def setup_driver(self, headless):
         options = webdriver.ChromeOptions()
@@ -46,6 +48,48 @@ class RecentMatchDataScraper:
         
         self.driver = webdriver.Chrome(options=options)
         self.driver.maximize_window()
+
+    def get_existing_urls(self):
+        """Get list of match URLs that already exist in the database"""
+        try:
+            # Check if database and table exist
+            if not os.path.exists(self.db_path):
+                print(f"Database {self.db_path} does not exist yet. Creating new database.")
+                return set()
+                
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # Check if table exists
+            cursor.execute(f'''
+                SELECT name FROM sqlite_master 
+                WHERE type='table' AND name='{self.table_name}'
+            ''')
+            
+            if not cursor.fetchone():
+                print(f"Table {self.table_name} doesn't exist yet. Will be created when saving data.")
+                conn.close()
+                return set()
+            
+            # Check if match_url column exists in the table
+            cursor.execute(f"PRAGMA table_info({self.table_name})")
+            columns = [info[1] for info in cursor.fetchall()]
+            
+            if 'match_url' not in columns:
+                print(f"No 'match_url' column in {self.table_name} table. Cannot check for duplicates.")
+                conn.close()
+                return set()
+            
+            # Get existing URLs
+            cursor.execute(f"SELECT DISTINCT match_url FROM {self.table_name}")
+            urls = {row[0] for row in cursor.fetchall() if row[0]}
+            
+            conn.close()
+            return urls
+            
+        except Exception as e:
+            print(f"Error fetching existing URLs: {e}")
+            return set()
 
     def random_delay(self, min_seconds=3, max_seconds=5):
         time.sleep(random.uniform(min_seconds, max_seconds))
@@ -79,7 +123,7 @@ class RecentMatchDataScraper:
                 'is_home': True,
                 'match_date': match_date,
                 'division': division,
-                'season': season,
+                'season': self.season,
                 'match_url': url
             }
             
@@ -100,7 +144,7 @@ class RecentMatchDataScraper:
                 'is_home': False,
                 'match_date': match_date,
                 'division': division,
-                'season': season,
+                'season': self.season,
                 'match_url': url
             }
             
@@ -437,10 +481,17 @@ class RecentMatchDataScraper:
             # Process each match URL
             matches_processed = 0
             matches_collected = 0
+            matches_skipped = 0
             
             for match_date_text, match_url in match_urls:
                 matches_processed += 1
                 print(f"\nProcessing match {matches_processed}/{len(match_urls)} from {match_date_text}: {match_url}")
+                
+                # Check if the match URL already exists in the database
+                if match_url in self.existing_urls:
+                    print(f"Skipping match - already exists in database: {match_url}")
+                    matches_skipped += 1
+                    continue
                 
                 match_data = self.get_match_data(match_url)
                 if match_data is not None:
@@ -453,7 +504,9 @@ class RecentMatchDataScraper:
                 # Add delay between matches
                 self.random_delay(2, 4)
             
-            print(f"\nProcessed {matches_processed} matches within date range, collected data for {matches_collected} matches")
+            print(f"\nProcessed {matches_processed} matches within date range")
+            print(f"Skipped {matches_skipped} matches (already in database)")
+            print(f"Collected data for {matches_collected} new matches")
             return True
             
         except Exception as e:
@@ -465,21 +518,12 @@ class RecentMatchDataScraper:
     def save_results(self):
         """Save results to both CSV and SQLite database"""
         if not self.match_data:
-            print("\nNo match data collected")
+            print("\nNo new match data collected")
             return False
             
         try:
             # Combine all match data into a single DataFrame
             combined_df = pd.concat(self.match_data, ignore_index=True)
-            
-            # Save to CSV
-            #timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            #filename = f'recent_matches_{self.days_back}days_{timestamp}.csv'
-            
-            #os.makedirs('data', exist_ok=True)
-            #filepath = os.path.join('data', filename)
-            #combined_df.to_csv(filepath, index=False)
-            #print(f"\nResults saved to {filepath}")
             
             # Save to SQLite database
             try:
@@ -516,6 +560,12 @@ class RecentMatchDataScraper:
                     cursor.execute(create_table_sql)
                     conn.commit()
                 
+                # Update our set of existing URLs
+                for match_df in self.match_data:
+                    if 'match_url' in match_df.columns:
+                        urls = match_df['match_url'].unique()
+                        self.existing_urls.update(urls)
+                
                 # Append data to the specified table
                 combined_df.to_sql(self.table_name, conn, if_exists='append', index=False)
                 print(f"Successfully appended {len(combined_df)} rows to {self.table_name} table")
@@ -523,7 +573,7 @@ class RecentMatchDataScraper:
                 # Close connection
                 conn.close()
                 
-                print(f"\nTotal events collected: {len(combined_df)}")
+                print(f"\nTotal new events collected: {len(combined_df)}")
                 return True
             
             except Exception as e:
@@ -554,9 +604,9 @@ class RecentMatchDataScraper:
 
 if __name__ == "__main__":
     # Set the season and number of days to look back
-    season = "2024-2025"  # Update with current season
+    season = "2023-2024"  # Update with current season
     league = "Premier-League"
-    days_back = 365  # Get matches from last 3 days
+    days_back = 1000  # Get matches from last 3 days
     table_name = "fbref_match_summary"  # Table name in the database
     db_path = r"C:\Users\Owner\dev\algobetting\infra\data\db\algobetting.db"  # SQLite database file path
     
