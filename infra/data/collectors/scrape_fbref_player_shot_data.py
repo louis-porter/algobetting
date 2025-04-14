@@ -13,6 +13,7 @@ import requests
 from bs4 import BeautifulSoup
 import html
 import re
+# No argparse needed
 
 # Try to import lxml, use html.parser as fallback
 try:
@@ -23,17 +24,28 @@ except ImportError:
     DEFAULT_PARSER = 'html.parser'
 
 class RecentMatchDataScraper:
-    def __init__(self, season, league, days_back=7, headless=True, db_path="team_model_db", table_name="prem_data"):
+    def __init__(self, season=None, league=None, days_back=7, headless=True, db_path="team_model_db", table_name="prem_data", specific_url=None):
         self.season = season
         self.league = league
         self.days_back = days_back
-        self.base_url = f"https://fbref.com/en/comps/9/{season}/schedule/{season}-{league}-Scores-and-Fixtures"
+        self.specific_url = specific_url
+        
+        if specific_url:
+            print(f"Specific URL mode: Will scrape only {specific_url}")
+        else:
+            if not season or not league:
+                raise ValueError("Season and league must be provided when not using specific URL")
+            self.base_url = f"https://fbref.com/en/comps/9/{season}/schedule/{season}-{league}-Scores-and-Fixtures"
+            print(f"Schedule mode: Will scrape recent matches from {self.base_url}")
+            
         self.match_data = []
         self.db_path = db_path
         self.table_name = table_name
         self.setup_driver(headless)
-        self.cutoff_date = datetime.now() - timedelta(days=days_back)
-        print(f"Scraping matches played after: {self.cutoff_date.strftime('%Y-%m-%d')}")
+        
+        if not specific_url:
+            self.cutoff_date = datetime.now() - timedelta(days=days_back)
+            print(f"Scraping matches played after: {self.cutoff_date.strftime('%Y-%m-%d')}")
         
     def setup_driver(self, headless):
         options = webdriver.ChromeOptions()
@@ -106,7 +118,7 @@ class RecentMatchDataScraper:
                     'is_home': True,
                     'match_date': match_date,
                     'division': division, 
-                    'season': self.season,
+                    'season': self.season if self.season else self._extract_season_from_url(url),
                     'match_url': url
                 }
                 
@@ -160,7 +172,7 @@ class RecentMatchDataScraper:
                     'is_home': False,
                     'match_date': match_date,
                     'division': division,
-                    'season': self.season,
+                    'season': self.season if self.season else self._extract_season_from_url(url),
                     'match_url': url
                 }
                 
@@ -184,6 +196,12 @@ class RecentMatchDataScraper:
         
         return home_players_df, away_players_df
 
+    def _extract_season_from_url(self, url):
+        """Extract season from match URL if season wasn't provided during initialization"""
+        match = re.search(r'/(\d{4}-\d{4})/', url)
+        if match:
+            return match.group(1)
+        return "Unknown"
 
     def get_match_player_data(self, url):
         self.random_delay()
@@ -202,8 +220,8 @@ class RecentMatchDataScraper:
             venue_time = soup.find('span', class_='venuetime')
             match_date = venue_time['data-venue-date'] if venue_time else None
             
-            # Skip if match is older than cutoff date
-            if match_date:
+            # Skip if match is older than cutoff date (only if we're not using a specific URL)
+            if not self.specific_url and match_date:
                 match_datetime = datetime.strptime(match_date, '%Y-%m-%d')
                 if match_datetime < self.cutoff_date:
                     print(f"Skipping match from {match_date} (older than {self.days_back} days)")
@@ -218,7 +236,18 @@ class RecentMatchDataScraper:
                 home_team = teams[0] if len(teams) > 0 else None
                 away_team = teams[1] if len(teams) > 1 else None
             else:
-                home_team, away_team = None, None
+                # Alternative method to extract teams
+                title_element = soup.find('h1')
+                if title_element:
+                    title_text = title_element.text.strip()
+                    teams_match = re.match(r'(.+?)\s+vs\.\s+(.+?)(?:\s+Match|$)', title_text)
+                    if teams_match:
+                        home_team = teams_match.group(1).strip()
+                        away_team = teams_match.group(2).strip()
+                    else:
+                        home_team, away_team = None, None
+                else:
+                    home_team, away_team = None, None
                 
             # Extract division
             division_link = soup.find('a', href=lambda x: x and '/comps/' in x and '-Stats' in x)
@@ -246,7 +275,7 @@ class RecentMatchDataScraper:
                             'is_home': row['is_home'],
                             'match_date': row['match_date'],
                             'division': row['division'],
-                            'season': row.get('season', self.season),
+                            'season': row.get('season', self.season if self.season else self._extract_season_from_url(url)),
                             'match_url': row['match_url']
                         }
                     
@@ -278,11 +307,11 @@ class RecentMatchDataScraper:
                 update_player_dict(away_player_data, away_df)
             
             # Convert dictionaries to DataFrames
-            home_players_df = pd.DataFrame(list(home_player_data.values()))
-            away_players_df = pd.DataFrame(list(away_player_data.values()))
+            home_players_df = pd.DataFrame(list(home_player_data.values())) if home_player_data else pd.DataFrame()
+            away_players_df = pd.DataFrame(list(away_player_data.values())) if away_player_data else pd.DataFrame()
             
             # Combine home and away
-            all_players_df = pd.concat([home_players_df, away_players_df], ignore_index=True)
+            all_players_df = pd.concat([home_players_df, away_players_df], ignore_index=True) if not (home_players_df.empty and away_players_df.empty) else pd.DataFrame()
             
             if not all_players_df.empty:
                 print(f"Collected data for {len(all_players_df)} players")
@@ -325,7 +354,31 @@ class RecentMatchDataScraper:
             print(f"Error finding fixtures table: {e}")
             return None
 
+    def scrape_specific_match(self):
+        """Scrape data from a specific match URL"""
+        try:
+            print(f"\nStarting scrape for specific match: {self.specific_url}")
+            
+            match_data = self.get_match_player_data(self.specific_url)
+            if match_data is not None:
+                self.match_data.append(match_data)
+                print(f"Successfully processed match data")
+                return True
+            else:
+                print(f"No data retrieved for match")
+                return False
+                
+        except Exception as e:
+            print(f"An error occurred during specific match scraping: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+
     def scrape_matches(self):
+        """Scrape multiple matches from the schedule page"""
+        if self.specific_url:
+            return self.scrape_specific_match()
+            
         try:
             print(f"\nStarting scrape for season {self.season}, matches from last {self.days_back} days")
             self.driver.get(self.base_url)
@@ -443,15 +496,6 @@ class RecentMatchDataScraper:
             # Combine all match data into a single DataFrame
             combined_df = pd.concat(self.match_data, ignore_index=True)
             
-            # Save to CSV
-            #timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            #filename = f'recent_matches_{self.days_back}days_{timestamp}.csv'
-            
-            #os.makedirs('data', exist_ok=True)
-            #filepath = os.path.join('data', filename)
-            #combined_df.to_csv(filepath, index=False)
-            #print(f"\nResults saved to {filepath}")
-            
             # Save to SQLite database
             try:
                 # Create the database file if it doesn't exist
@@ -524,12 +568,18 @@ class RecentMatchDataScraper:
             print("\nScript completed")
 
 if __name__ == "__main__":
-    # Set the season and number of days to look back
+    # Set variables here - modify these as needed
     season = "2024-2025"  # Update with current season
     league = "Premier-League"
-    days_back = 365  # Get matches from last 3 days
+    days_back = 365  # Get matches from last 7 days
     table_name = "fbref_player_stats"  # Table name in the database
     db_path = r"C:\Users\Owner\dev\algobetting\infra\data\db\algobetting.db"  # SQLite database file path
+    headless = True  # Run in headless mode
+    
+    # If you want to scrape a specific match, set specific_url
+    # Leave as None to use schedule mode (scrape recent matches)
+    specific_url = 'https://fbref.com/en/matches/923bfab0/Tottenham-Hotspur-West-Ham-United-October-19-2024-Premier-League'
+    # Example: specific_url = "https://fbref.com/en/matches/12345/TeamA-TeamB"
     
     # Check and notify about required packages
     required_packages = {
@@ -550,5 +600,27 @@ if __name__ == "__main__":
             print(f"✗ {package} is not installed. {install_msg}")
     
     print("\nStarting scraper...")
-    scraper = RecentMatchDataScraper(season, league=league, days_back=days_back, db_path=db_path, table_name=table_name, headless=True)
+    
+    if specific_url:
+        # Use specific URL mode
+        print(f"Specific URL mode: Will scrape only {specific_url}")
+        scraper = RecentMatchDataScraper(
+            days_back=days_back,
+            db_path=db_path, 
+            table_name=table_name, 
+            headless=headless,
+            specific_url=specific_url
+        )
+    else:
+        # Use schedule mode
+        print(f"Schedule mode: Will scrape matches from the past {days_back} days")
+        scraper = RecentMatchDataScraper(
+            season=season,
+            league=league,
+            days_back=days_back,
+            db_path=db_path, 
+            table_name=table_name, 
+            headless=headless
+        )
+        
     scraper.run()
