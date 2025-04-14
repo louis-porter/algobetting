@@ -58,8 +58,8 @@ df['match_date'] = pd.to_datetime(df['match_date'])
 df['match_red'] = df["cards_red"].astype(int) + df["opp_cards_red"].astype(int)
 
 # Define metrics to use
-attack_metrics = ['shots', 'shots_on_target', 'xg', 'npxg', 'touches_att_pen_area', 'touches_att_3rd', 'touches', 'pens_won', 'corner_kicks']
-defense_metrics = ['opp_shots', 'opp_shots_on_target', 'opp_xg', 'opp_npxg', 'opp_touches_att_pen_area', 'opp_touches_att_3rd', 'opp_touches', 'opp_pens_won', 'opp_corner_kicks']
+attack_metrics = ['opp_goals', 'shots', 'shots_on_target', 'xg', 'npxg', 'touches_att_pen_area', 'touches_att_3rd', 'touches', 'pens_won', 'corner_kicks']
+defense_metrics = ['opp_goals', 'opp_shots', 'opp_shots_on_target', 'opp_xg', 'opp_npxg', 'opp_touches_att_pen_area', 'opp_touches_att_3rd', 'opp_touches', 'opp_pens_won', 'opp_corner_kicks']
 
 # Create a unique match identifier
 df['match_id'] = df['match_url']  
