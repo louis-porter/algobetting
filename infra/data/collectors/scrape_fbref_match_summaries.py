@@ -604,9 +604,9 @@ class RecentMatchDataScraper:
 
 if __name__ == "__main__":
     # Set the season and number of days to look back
-    season = "2023-2024"  # Update with current season
+    season = "2022-2023"  # Update with current season
     league = "Premier-League"
-    days_back = 1000  # Get matches from last 3 days
+    days_back = 2000  # Get matches from last 3 days
     table_name = "fbref_match_summary"  # Table name in the database
     db_path = r"C:\Users\Owner\dev\algobetting\infra\data\db\algobetting.db"  # SQLite database file path
     
