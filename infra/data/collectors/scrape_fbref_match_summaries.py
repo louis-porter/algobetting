@@ -23,11 +23,11 @@ except ImportError:
     DEFAULT_PARSER = 'html.parser'
 
 class RecentMatchDataScraper:
-    def __init__(self, season, league, days_back=7, headless=True, db_path="team_model_db", table_name="prem_data"):
+    def __init__(self, season, league, league_id, days_back=7, headless=True, db_path="team_model_db", table_name="prem_data"):
         self.season = season
         self.league = league
         self.days_back = days_back
-        self.base_url = f"https://fbref.com/en/comps/9/{season}/schedule/{season}-{league}-Scores-and-Fixtures"
+        self.base_url = f"https://fbref.com/en/comps/{league_id}/{season}/schedule/{season}-{league}-Scores-and-Fixtures"
         self.match_data = []
         self.db_path = db_path
         self.table_name = table_name
@@ -604,8 +604,9 @@ class RecentMatchDataScraper:
 
 if __name__ == "__main__":
     # Set the season and number of days to look back
-    season = "2021-2022"  # Update with current season
-    league = "Premier-League"
+    season = "2024-2025"  # Update with current season
+    league = "La-Liga"
+    league_id = 12
     days_back = 10000  # Get matches from last 3 days
     table_name = "fbref_match_summary"  # Table name in the database
     db_path = r"C:\Users\Owner\dev\algobetting\infra\data\db\algobetting.db"  # SQLite database file path
@@ -629,5 +630,5 @@ if __name__ == "__main__":
             print(f"✗ {package} is not installed. {install_msg}")
     
     print("\nStarting scraper...")
-    scraper = RecentMatchDataScraper(season, league=league, days_back=days_back, db_path=db_path, table_name=table_name, headless=True)
+    scraper = RecentMatchDataScraper(season, league=league, league_id=league_id, days_back=days_back, db_path=db_path, table_name=table_name, headless=True)
     scraper.run()
