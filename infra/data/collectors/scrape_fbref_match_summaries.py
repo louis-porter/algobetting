@@ -122,7 +122,7 @@ class RecentMatchDataScraper:
                 'team': home_team,
                 'is_home': True,
                 'match_date': match_date,
-                'division': division,
+                'division': self.league,
                 'season': self.season,
                 'match_url': url
             }
@@ -143,7 +143,7 @@ class RecentMatchDataScraper:
                 'team': away_team,
                 'is_home': False,
                 'match_date': match_date,
-                'division': division,
+                'division': self.league,
                 'season': self.season,
                 'match_url': url
             }
@@ -604,7 +604,7 @@ class RecentMatchDataScraper:
 
 if __name__ == "__main__":
     # Set the season and number of days to look back
-    season = "2021-2022"  # Update with current season
+    season = "2023-2024"  # Update with current season
     league = "Serie-A"
     league_id = 11
     days_back = 10000  # Get matches from last 3 days
