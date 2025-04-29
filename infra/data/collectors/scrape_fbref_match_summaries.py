@@ -604,7 +604,7 @@ class RecentMatchDataScraper:
 
 if __name__ == "__main__":
     # Set the season and number of days to look back
-    season = "2023-2024"  # Update with current season
+    season = "2022-2023"  # Update with current season
     league = "Bundesliga"
     league_id = 20
     days_back = 10000  # Get matches from last 3 days
