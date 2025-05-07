@@ -142,7 +142,7 @@ feature_cols = ["match_url", "match_date", "season", "team", "opp_team", "is_hom
 features_df = final_df[feature_cols].copy()
 
 # Write to a new table in your SQLite database
-features_df.to_sql('fbref_team_goals_features', conn, if_exists='replace', index=False)
+features_df.to_sql('fbref_team_goals_features_0.005_365', conn, if_exists='replace', index=False)
 
 # Close the connection
 conn.close()
