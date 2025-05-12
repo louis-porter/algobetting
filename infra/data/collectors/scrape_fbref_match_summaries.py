@@ -213,8 +213,8 @@ class RecentMatchDataScraper:
                 r'stats_[a-z0-9]+_possession', possession_fields
             )
 
-            # Extract penalty stats
-            misc_fields = ['pens_won']
+            # Extract misc stats including own goals
+            misc_fields = ['pens_won', 'own_goals']  # Added 'own_goals' to capture OGs
             home_misc_df, away_misc_df = self.extract_team_stats_from_table(
                 soup, home_team, away_team, match_date, division, url, 
                 r'stats_[a-z0-9]+_misc', misc_fields
@@ -264,6 +264,7 @@ class RecentMatchDataScraper:
                     # Add to home_summary_df if needed
                     if not home_summary_df.empty:
                         home_summary_df['psxg'] = home_psxg
+            
             # Merge all DataFrames into one match DataFrame
             try:
                 # First, merge home stats from different tables
@@ -332,12 +333,12 @@ class RecentMatchDataScraper:
                             if col not in away_df.columns:
                                 away_df[col] = away_pass_types_df[col].values[0]
                 
+                # Create copies of the dataframes before modification
+                home_df_copy = home_df.copy()
+                away_df_copy = away_df.copy()
+                
                 # Add opposition stats to each team's dataframe
                 if not home_df.empty and not away_df.empty:
-                    # Create copies of the dataframes to avoid modification during iteration
-                    home_df_copy = home_df.copy()
-                    away_df_copy = away_df.copy()
-
                     # Add away team name as opp_team to home_df
                     if 'team' in away_df_copy.columns:
                         home_df['opp_team'] = away_df_copy['team'].values[0]
@@ -355,6 +356,40 @@ class RecentMatchDataScraper:
                     for col in home_df_copy.columns:
                         if col not in ['match_date', 'team', 'opponent', 'division', 'match_url']:
                             away_df[f'opp_{col}'] = home_df_copy[col].values[0]
+                    
+                    # HANDLE OWN GOALS: Add opponent's own goals to team's goals
+                    # Add away team's own goals to home team's goals
+                    if 'own_goals' in away_df_copy.columns and 'goals' in home_df.columns:
+                        try:
+                            # Make sure values are numeric before adding
+                            away_og = pd.to_numeric(away_df_copy['own_goals'].values[0], errors='coerce') or 0
+                            home_goals = pd.to_numeric(home_df['goals'].values[0], errors='coerce') or 0
+                            # Add away team's own goals to home team's goals
+                            home_df['goals'] = str(home_goals + away_og)
+                            #print(f"Added {away_og} own goals from away team to home team's goals")
+                        except Exception as e:
+                            print(f"Error handling own goals for home team: {e}")
+                    
+                    # Add home team's own goals to away team's goals
+                    if 'own_goals' in home_df_copy.columns and 'goals' in away_df.columns:
+                        try:
+                            # Make sure values are numeric before adding
+                            home_og = pd.to_numeric(home_df_copy['own_goals'].values[0], errors='coerce') or 0
+                            away_goals = pd.to_numeric(away_df['goals'].values[0], errors='coerce') or 0
+                            # Add home team's own goals to away team's goals
+                            away_df['goals'] = str(away_goals + home_og)
+                            #print(f"Added {home_og} own goals from home team to away team's goals")
+                        except Exception as e:
+                            print(f"Error handling own goals for away team: {e}")
+                
+                # Remove 'own_goals' column from both dataframes before combining
+                # This prevents the error when saving to a database that doesn't have this column
+                if 'own_goals' in home_df.columns:
+                    home_df = home_df.drop(columns=['own_goals'])
+                    home_df = home_df.drop(columns=['opp_own_goals'])
+                if 'own_goals' in away_df.columns:
+                    away_df = away_df.drop(columns=['own_goals'])
+                    away_df = away_df.drop(columns=['opp_own_goals'])
                 
                 # Combine home and away into a single match DataFrame
                 match_df = pd.concat([home_df, away_df], ignore_index=True)
@@ -604,13 +639,13 @@ class RecentMatchDataScraper:
 
 if __name__ == "__main__":
     # Set the season and number of days to look back
-    season = "2021-2022"  # Update with current season
-    league = "Bundesliga"
-    league_id = 20
-    days_back = 10000  # Get matches from last 3 days
+    season = "2024-2025"  # Update with current season
+    league = "La-Liga"
+    league_id = 12
+    days_back = 4  # Get matches from last 3 days
     table_name = "fbref_match_summary"  # Table name in the database
     db_path = r"C:\Users\Owner\dev\algobetting\infra\data\db\algobetting.db"  # SQLite database file path
-    
+     
     # Check and notify about required packages
     required_packages = {
         'lxml': 'Optional but recommended: pip install lxml',
