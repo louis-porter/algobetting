@@ -58,7 +58,7 @@ df['match_date'] = pd.to_datetime(df['match_date'])
 df['match_red'] = df["cards_red"].astype(int) + df["opp_cards_red"].astype(int)
 
 # Define metrics to use
-attack_metrics = ['opp_goals', 'shots', 'shots_on_target', 'xg', 'npxg', 'touches_att_pen_area', 'touches_att_3rd', 'touches', 'pens_won', 'corner_kicks']
+attack_metrics = ['goals', 'shots', 'shots_on_target', 'xg', 'npxg', 'touches_att_pen_area', 'touches_att_3rd', 'touches', 'pens_won', 'corner_kicks']
 defense_metrics = ['opp_goals', 'opp_shots', 'opp_shots_on_target', 'opp_xg', 'opp_npxg', 'opp_touches_att_pen_area', 'opp_touches_att_3rd', 'opp_touches', 'opp_pens_won', 'opp_corner_kicks']
 
 # Create a unique match identifier
@@ -119,7 +119,7 @@ opp_metrics_df = metrics_df.rename(columns={
     'team': 'opp_team',
     'opp_team': 'team'
 })
-opp_metrics_df.columns = [f'{col}_opp' if col.startswith('weighted') else col for col in opp_metrics_df.columns]
+opp_metrics_df.columns = [f'opp_{col}' if col.startswith('weighted') else col for col in opp_metrics_df.columns]
 
 # Merge opponent metrics
 final_df = final_df.merge(
@@ -130,19 +130,19 @@ final_df = final_df.merge(
 
 feature_cols = ["match_url", "match_date", "season", "team", "opp_team", "is_home", "goals", "opp_goals", "xg", "opp_xg",
                 # attack metrics
-                "weighted_attack_shots", "weighted_attack_shots_on_target", "weighted_attack_xg", "weighted_attack_npxg", 
+                "weighted_attack_goals", "weighted_attack_shots", "weighted_attack_shots_on_target", "weighted_attack_xg", "weighted_attack_npxg", 
                 "weighted_attack_touches_att_pen_area", "weighted_attack_touches_att_3rd", "weighted_attack_touches",
                 "weighted_attack_pens_won", "weighted_attack_corner_kicks",
-                # defence metrics
-                "weighted_defense_opp_shots_opp", "weighted_defense_opp_shots_on_target_opp", "weighted_defense_opp_xg_opp",
-                "weighted_defense_opp_npxg_opp", "weighted_defense_opp_touches_att_pen_area_opp", "weighted_defense_opp_touches_att_3rd_opp",
-                "weighted_defense_opp_touches_opp", "weighted_defense_opp_pens_won_opp", "weighted_defense_opp_corner_kicks_opp"]
+                # opposition defence metrics
+                "opp_weighted_defense_opp_goals","opp_weighted_defense_opp_shots", "opp_weighted_defense_opp_shots_on_target", "opp_weighted_defense_opp_xg",
+                "opp_weighted_defense_opp_npxg", "opp_weighted_defense_opp_touches_att_pen_area", "opp_weighted_defense_opp_touches_att_3rd",
+                "opp_weighted_defense_opp_touches", "opp_weighted_defense_opp_pens_won", "opp_weighted_defense_opp_corner_kicks"]
 
 # Create a features dataframe with only the selected columns
 features_df = final_df[feature_cols].copy()
 
 # Write to a new table in your SQLite database
-features_df.to_sql('fbref_team_goals_features_0.005_365', conn, if_exists='replace', index=False)
+features_df.to_sql('fbref_team_goals_features_005_365', conn, if_exists='replace', index=False)
 
 # Close the connection
 conn.close()

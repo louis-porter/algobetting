@@ -295,13 +295,181 @@ class OwnGoalsUpdater:
             self.driver.quit()
             print("WebDriver closed")
 
+
+class GoalConsistencyFixer:
+    def __init__(self, db_path, table_name):
+        """
+        Initialize the goals consistency fixer.
+        
+        Args:
+            db_path: Path to the SQLite database
+            table_name: Name of the table containing match data
+        """
+        self.db_path = db_path
+        self.table_name = table_name
+        self.matches_processed = 0
+        self.matches_fixed = 0
+    
+    def get_match_urls(self):
+        """Get all unique match URLs from the database"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # Check if table exists
+            cursor.execute(f'''
+                SELECT name FROM sqlite_master 
+                WHERE type='table' AND name='{self.table_name}'
+            ''')
+            
+            if not cursor.fetchone():
+                print(f"Table {self.table_name} doesn't exist!")
+                conn.close()
+                return []
+            
+            # Get distinct match URLs
+            cursor.execute(f"SELECT DISTINCT match_url FROM {self.table_name}")
+            urls = [row[0] for row in cursor.fetchall() if row[0]]
+            
+            conn.close()
+            print(f"Found {len(urls)} unique match URLs in the database")
+            return urls
+            
+        except Exception as e:
+            print(f"Error fetching match URLs: {e}")
+            return []
+    
+    def fix_goal_consistency(self):
+        """
+        Fix the consistency between goals and opp_goals for each match.
+        For each pair of rows with the same match_url, ensure opp_goals equals
+        the corresponding team's goals.
+        """
+        urls = self.get_match_urls()
+        if not urls:
+            print("No match URLs found to process")
+            return
+        
+        conn = sqlite3.connect(self.db_path)
+        
+        try:
+            total_matches = len(urls)
+            fixed_matches = 0
+            
+            for i, url in enumerate(urls):
+                self.matches_processed += 1
+                
+                # Get the two rows for this match
+                query = f"""
+                    SELECT team, is_home, goals, opp_goals, opp_team
+                    FROM {self.table_name}
+                    WHERE match_url = ?
+                """
+                
+                match_df = pd.read_sql_query(query, conn, params=(url,))
+                
+                # Skip if we don't have exactly 2 rows
+                if len(match_df) != 2:
+                    print(f"Warning: Match {url} has {len(match_df)} rows instead of 2, skipping")
+                    continue
+                
+                # Extract the two rows
+                row1 = match_df.iloc[0]
+                row2 = match_df.iloc[1]
+                
+                # Check if team1's goals match team2's opp_goals
+                team1_goals = self.safe_convert_to_float(row1['goals'])
+                team2_opp_goals = self.safe_convert_to_float(row2['opp_goals'])
+                
+                # Check if team2's goals match team1's opp_goals
+                team2_goals = self.safe_convert_to_float(row2['goals'])
+                team1_opp_goals = self.safe_convert_to_float(row1['opp_goals'])
+                
+                need_to_fix = False
+                fixes = []
+                
+                # Check for discrepancies
+                if team1_goals != team2_opp_goals:
+                    fixes.append(f"Team2 ({row2['team']}) opp_goals {team2_opp_goals} → {team1_goals}")
+                    need_to_fix = True
+                
+                if team2_goals != team1_opp_goals:
+                    fixes.append(f"Team1 ({row1['team']}) opp_goals {team1_opp_goals} → {team2_goals}")
+                    need_to_fix = True
+                
+                # Fix the discrepancies
+                if need_to_fix:
+                    fixed_matches += 1
+                    
+                    # Update team2's opp_goals to match team1's goals
+                    cursor = conn.cursor()
+                    cursor.execute(f"""
+                        UPDATE {self.table_name}
+                        SET opp_goals = ?
+                        WHERE match_url = ? AND team = ?
+                    """, (str(team1_goals), url, row2['team']))
+                    
+                    # Update team1's opp_goals to match team2's goals
+                    cursor.execute(f"""
+                        UPDATE {self.table_name}
+                        SET opp_goals = ?
+                        WHERE match_url = ? AND team = ?
+                    """, (str(team2_goals), url, row1['team']))
+                    
+                    conn.commit()
+                    
+                    print(f"Fixed match {url} - {' / '.join(fixes)}")
+                
+                # Print progress update
+                if (i + 1) % 100 == 0 or (i + 1) == total_matches:
+                    completion = (i + 1) / total_matches * 100
+                    print(f"Progress: {i + 1}/{total_matches} ({completion:.1f}%)")
+                    print(f"Fixed {fixed_matches} matches so far")
+            
+            self.matches_fixed = fixed_matches
+            
+        except Exception as e:
+            print(f"Error processing matches: {e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            conn.close()
+            
+        print(f"\nConsistency fix complete!")
+        print(f"Processed {self.matches_processed} matches")
+        print(f"Fixed {self.matches_fixed} matches with inconsistent goal data")
+    
+    def safe_convert_to_float(self, value):
+        """Safely convert a value to float, handling various formats"""
+        if value is None:
+            return 0.0
+        
+        try:
+            return float(value)
+        except (ValueError, TypeError):
+            # Try to handle format variations
+            if isinstance(value, str):
+                # Remove any non-numeric characters except decimal point
+                clean_value = ''.join(c for c in value if c.isdigit() or c == '.')
+                try:
+                    return float(clean_value) if clean_value else 0.0
+                except ValueError:
+                    return 0.0
+            return 0.0
+
+
 if __name__ == "__main__":
     # Set the database path and table name
     db_path = r"C:\Users\Owner\dev\algobetting\infra\data\db\algobetting.db"  # Update this path
     table_name = "fbref_match_summary"  # Update this with your table name
-    batch_size = 50  # Update in batches to avoid long locks
+    #batch_size = 50  # Update in batches to avoid long locks
     
     # Run the updater
-    updater = OwnGoalsUpdater(db_path=db_path, table_name=table_name, batch_size=batch_size, headless=True)
-    print(f"Starting own goals update for database: {db_path}, table: {table_name}")
-    updater.update_own_goals()
+    #updater = OwnGoalsUpdater(db_path=db_path, table_name=table_name, batch_size=batch_size, headless=True)
+    #print(f"Starting own goals update for database: {db_path}, table: {table_name}")
+    #updater.update_own_goals()
+
+    # Run the fixer
+    fixer = GoalConsistencyFixer(db_path=db_path, table_name=table_name)
+    print(f"Starting goal consistency fix for database: {db_path}, table: {table_name}")
+    fixer.fix_goal_consistency()
