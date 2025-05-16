@@ -128,7 +128,7 @@ final_df = final_df.merge(
     how='left'
 )
 
-feature_cols = ["match_url", "match_date", "season", "team", "opp_team", "is_home", "goals", "opp_goals", "xg", "opp_xg",
+feature_cols = ["match_url", "match_date", "season", "division", "team", "opp_team", "is_home", "goals", "opp_goals", "xg", "opp_xg",
                 # attack metrics
                 "weighted_attack_goals", "weighted_attack_shots", "weighted_attack_shots_on_target", "weighted_attack_xg", "weighted_attack_npxg", 
                 "weighted_attack_touches_att_pen_area", "weighted_attack_touches_att_3rd", "weighted_attack_touches",
