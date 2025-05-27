@@ -13,6 +13,7 @@ import requests
 from bs4 import BeautifulSoup
 import html
 import re
+import hashlib
 # No argparse needed
 
 # Try to import lxml, use html.parser as fallback
@@ -24,8 +25,18 @@ except ImportError:
     DEFAULT_PARSER = 'html.parser'
 
 class RecentMatchDataScraper:
-    def __init__(self, season=None, league=None, days_back=7, headless=True, db_path="team_model_db", table_name="prem_data", specific_url=None):
-        self.season = season
+    def __init__(self, season=None, seasons=None, league=None, days_back=7, headless=True, db_path="team_model_db", table_name="prem_data", specific_url=None):
+        # Handle multiple seasons input
+        if seasons is not None:
+            self.seasons = seasons if isinstance(seasons, list) else [seasons]
+            self.season = None  # Will be set during processing
+        elif season is not None:
+            self.seasons = [season]
+            self.season = season
+        else:
+            self.seasons = []
+            self.season = season
+            
         self.league = league
         self.days_back = days_back
         self.specific_url = specific_url
@@ -33,11 +44,13 @@ class RecentMatchDataScraper:
         if specific_url:
             print(f"Specific URL mode: Will scrape only {specific_url}")
         else:
-            if not season or not league:
-                raise ValueError("Season and league must be provided when not using specific URL")
-            self.base_url = f"https://fbref.com/en/comps/9/{season}/schedule/{season}-{league}-Scores-and-Fixtures"
-            print(f"Schedule mode: Will scrape recent matches from {self.base_url}")
-            
+            if not self.seasons or not league:
+                raise ValueError("Season(s) and league must be provided when not using specific URL")
+            if len(self.seasons) > 1:
+                print(f"Multi-season mode: Will scrape {len(self.seasons)} seasons: {', '.join(self.seasons)}")
+            else:
+                print(f"Single season mode: Will scrape season {self.seasons[0]}")
+                
         self.match_data = []
         self.db_path = db_path
         self.table_name = table_name
@@ -46,7 +59,82 @@ class RecentMatchDataScraper:
         if not specific_url:
             self.cutoff_date = datetime.now() - timedelta(days=days_back)
             print(f"Scraping matches played after: {self.cutoff_date.strftime('%Y-%m-%d')}")
+    
+    def create_record_hash(self, player, team, match_date, match_url):
+        """Create a unique hash for a player's match record to detect duplicates"""
+        # Combine key fields that make a record unique
+        unique_string = f"{player}|{team}|{match_date}|{match_url}"
+        return hashlib.md5(unique_string.encode()).hexdigest()
+    
+    def get_existing_hashes(self):
+        """Get all existing record hashes from the database"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # Check if table exists
+            cursor.execute(f'''
+                SELECT name FROM sqlite_master 
+                WHERE type='table' AND name='{self.table_name}'
+            ''')
+            
+            if not cursor.fetchone():
+                conn.close()
+                return set()  # No table exists yet, no duplicates possible
+            
+            # Check if record_hash column exists
+            cursor.execute(f"PRAGMA table_info({self.table_name})")
+            columns = [column[1] for column in cursor.fetchall()]
+            
+            if 'record_hash' not in columns:
+                # Add record_hash column if it doesn't exist
+                cursor.execute(f'ALTER TABLE {self.table_name} ADD COLUMN record_hash TEXT')
+                conn.commit()
+                print("Added record_hash column to existing table")
+                conn.close()
+                return set()  # No hashes exist yet
+            
+            # Get all existing hashes
+            cursor.execute(f'SELECT record_hash FROM {self.table_name} WHERE record_hash IS NOT NULL')
+            existing_hashes = {row[0] for row in cursor.fetchall()}
+            
+            conn.close()
+            print(f"Found {len(existing_hashes)} existing records in database")
+            return existing_hashes
+            
+        except Exception as e:
+            print(f"Error getting existing hashes: {e}")
+            return set()
+    
+    def filter_duplicates(self, df):
+        """Filter out duplicate records from DataFrame"""
+        if df.empty:
+            return df
+            
+        # Get existing hashes from database
+        existing_hashes = self.get_existing_hashes()
         
+        # Add record_hash column to DataFrame
+        df['record_hash'] = df.apply(
+            lambda row: self.create_record_hash(
+                row['player'], 
+                row['team'], 
+                row['match_date'], 
+                row['match_url']
+            ), 
+            axis=1
+        )
+        
+        # Filter out duplicates
+        original_count = len(df)
+        df_filtered = df[~df['record_hash'].isin(existing_hashes)].copy()
+        duplicates_removed = original_count - len(df_filtered)
+        
+        if duplicates_removed > 0:
+            print(f"Removed {duplicates_removed} duplicate records")
+        
+        return df_filtered
+
     def setup_driver(self, headless):
         options = webdriver.ChromeOptions()
         if headless:
@@ -62,9 +150,7 @@ class RecentMatchDataScraper:
     def random_delay(self, min_seconds=3, max_seconds=5):
         time.sleep(random.uniform(min_seconds, max_seconds))
 
-
     def extract_player_stats_from_table(self, soup, home_team, away_team, match_date, division, url, table_pattern, stat_fields=None):
-
         # Find tables matching the pattern
         pattern = re.compile(table_pattern)
         stats_tables = soup.find_all('table', id=pattern)
@@ -374,14 +460,15 @@ class RecentMatchDataScraper:
             traceback.print_exc()
             return False
 
-    def scrape_matches(self):
-        """Scrape multiple matches from the schedule page"""
-        if self.specific_url:
-            return self.scrape_specific_match()
-            
+    def scrape_season_matches(self, season):
+        """Scrape matches for a specific season"""
+        self.season = season
+        base_url = f"https://fbref.com/en/comps/9/{season}/schedule/{season}-{self.league}-Scores-and-Fixtures"
+        
+        print(f"\nScraping season {season} from: {base_url}")
+        
         try:
-            print(f"\nStarting scrape for season {self.season}, matches from last {self.days_back} days")
-            self.driver.get(self.base_url)
+            self.driver.get(base_url)
             self.random_delay()
             
             # First, collect all match URLs that meet our criteria
@@ -456,7 +543,7 @@ class RecentMatchDataScraper:
             # Reverse the list to get most recent matches first
             match_urls.reverse()
             
-            print(f"Found {len(match_urls)} matches within date range")
+            print(f"Found {len(match_urls)} matches within date range for season {season}")
             
             # Process each match URL
             matches_processed = 0
@@ -477,17 +564,45 @@ class RecentMatchDataScraper:
                 # Add delay between matches
                 self.random_delay(2, 4)
             
-            print(f"\nProcessed {matches_processed} matches within date range, collected data for {matches_collected} matches")
+            print(f"\nSeason {season}: Processed {matches_processed} matches within date range, collected data for {matches_collected} matches")
             return True
             
         except Exception as e:
-            print(f"An error occurred during scraping: {e}")
+            print(f"An error occurred during scraping season {season}: {e}")
             import traceback
             traceback.print_exc()
             return False
 
+    def scrape_matches(self):
+        """Scrape multiple matches - can handle multiple seasons"""
+        if self.specific_url:
+            return self.scrape_specific_match()
+        
+        total_seasons_processed = 0
+        
+        # Process each season
+        for season in self.seasons:
+            print(f"\n{'='*60}")
+            print(f"PROCESSING SEASON: {season}")
+            print(f"{'='*60}")
+            
+            success = self.scrape_season_matches(season)
+            if success:
+                total_seasons_processed += 1
+            
+            # Add delay between seasons
+            if len(self.seasons) > 1:
+                print(f"Pausing before next season...")
+                self.random_delay(5, 8)
+        
+        print(f"\n{'='*60}")
+        print(f"COMPLETED: Processed {total_seasons_processed}/{len(self.seasons)} seasons")
+        print(f"{'='*60}")
+        
+        return total_seasons_processed > 0
+
     def save_results(self):
-        """Save results to both CSV and SQLite database"""
+        """Save results to both CSV and SQLite database with duplicate detection"""
         if not self.match_data:
             print("\nNo match data collected")
             return False
@@ -495,6 +610,16 @@ class RecentMatchDataScraper:
         try:
             # Combine all match data into a single DataFrame
             combined_df = pd.concat(self.match_data, ignore_index=True)
+            print(f"\nTotal records before duplicate filtering: {len(combined_df)}")
+            
+            # Filter out duplicates
+            combined_df = self.filter_duplicates(combined_df)
+            
+            if combined_df.empty:
+                print("No new records to save after duplicate filtering")
+                return True
+            
+            print(f"Records to save after duplicate filtering: {len(combined_df)}")
             
             # Save to SQLite database
             try:
@@ -518,6 +643,8 @@ class RecentMatchDataScraper:
                             columns.append(f'"{col}" TEXT')
                         elif 'is_' in col:
                             columns.append(f'"{col}" BOOLEAN')
+                        elif col == 'record_hash':
+                            columns.append(f'"{col}" TEXT UNIQUE')  # Make hash unique
                         elif any(num in col for num in ['shots', 'xg', 'touches', 'psxg']):
                             columns.append(f'"{col}" REAL')
                         else:
@@ -530,15 +657,24 @@ class RecentMatchDataScraper:
                     '''
                     cursor.execute(create_table_sql)
                     conn.commit()
+                else:
+                    # Check if record_hash column exists in existing table
+                    cursor.execute(f"PRAGMA table_info({self.table_name})")
+                    columns = [column[1] for column in cursor.fetchall()]
+                    
+                    if 'record_hash' not in columns:
+                        cursor.execute(f'ALTER TABLE {self.table_name} ADD COLUMN record_hash TEXT')
+                        conn.commit()
+                        print("Added record_hash column to existing table")
                 
                 # Append data to the specified table
                 combined_df.to_sql(self.table_name, conn, if_exists='append', index=False)
-                print(f"Successfully appended {len(combined_df)} rows to {self.table_name} table")
+                print(f"Successfully appended {len(combined_df)} new rows to {self.table_name} table")
                 
                 # Close connection
                 conn.close()
                 
-                print(f"\nTotal events collected: {len(combined_df)}")
+                print(f"\nTotal new events collected: {len(combined_df)}")
                 return True
             
             except Exception as e:
@@ -569,16 +705,22 @@ class RecentMatchDataScraper:
 
 if __name__ == "__main__":
     # Set variables here - modify these as needed
-    season = "2024-2025"  # Update with current season
+    
+    # SINGLE SEASON MODE
+    # season = "2024-2025"  # Update with current season
+    
+    # MULTIPLE SEASONS MODE - Use this instead of single season
+    seasons = ["2024-2025", "2023-2024", "2022-2023", "2021-2022"]  # List of seasons to scrape
+    
     league = "Premier-League"
-    days_back = 365  # Get matches from last 7 days
+    days_back = 5000  # Get matches from last 365 days
     table_name = "fbref_player_stats"  # Table name in the database
     db_path = r"C:\Users\Owner\dev\algobetting\infra\data\db\algobetting.db"  # SQLite database file path
     headless = True  # Run in headless mode
     
     # If you want to scrape a specific match, set specific_url
     # Leave as None to use schedule mode (scrape recent matches)
-    specific_url = 'https://fbref.com/en/matches/923bfab0/Tottenham-Hotspur-West-Ham-United-October-19-2024-Premier-League'
+    specific_url = None
     # Example: specific_url = "https://fbref.com/en/matches/12345/TeamA-TeamB"
     
     # Check and notify about required packages
@@ -612,10 +754,10 @@ if __name__ == "__main__":
             specific_url=specific_url
         )
     else:
-        # Use schedule mode
+        # Use schedule mode with multiple seasons
         print(f"Schedule mode: Will scrape matches from the past {days_back} days")
         scraper = RecentMatchDataScraper(
-            season=season,
+            seasons=seasons,  # Pass list of seasons
             league=league,
             days_back=days_back,
             db_path=db_path, 
