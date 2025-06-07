@@ -29,6 +29,7 @@ class MultiSeasonMatchDataScraper:
         self.league_id = league_id
         self.days_back = days_back
         self.match_data = []
+        self.season_match_data = []  # Store data for current season only
         self.db_path = db_path
         self.table_name = table_name
         self.setup_driver(headless)
@@ -530,9 +531,80 @@ class MultiSeasonMatchDataScraper:
             print(f"Error ensuring All Rounds view: {e}")
             return False
 
+    def save_season_results(self, season):
+        """Save results for a specific season to the database"""
+        if not self.season_match_data:
+            print(f"\nNo new match data collected for season {season}")
+            return False
+            
+        try:
+            # Combine all match data for this season into a single DataFrame
+            combined_df = pd.concat(self.season_match_data, ignore_index=True)
+            
+            # Save to SQLite database
+            try:
+                # Create the database file if it doesn't exist
+                conn = sqlite3.connect(self.db_path)
+                cursor = conn.cursor()
+                
+                # Check if table exists, create it if not
+                cursor.execute(f'''
+                    SELECT name FROM sqlite_master 
+                    WHERE type='table' AND name='{self.table_name}'
+                ''')
+                
+                if not cursor.fetchone():
+                    print(f"Creating {self.table_name} table as it doesn't exist")
+                    # Generate table creation SQL based on DataFrame columns
+                    # This is a simplistic approach - you might want to define specific types
+                    columns = []
+                    for col in combined_df.columns:
+                        if col in ['match_date']:
+                            columns.append(f'"{col}" TEXT')
+                        elif 'is_' in col:
+                            columns.append(f'"{col}" BOOLEAN')
+                        elif any(num in col for num in ['shots', 'xg', 'touches', 'psxg']):
+                            columns.append(f'"{col}" REAL')
+                        else:
+                            columns.append(f'"{col}" TEXT')
+                    
+                    create_table_sql = f'''
+                        CREATE TABLE {self.table_name} (
+                            {', '.join(columns)}
+                        )
+                    '''
+                    cursor.execute(create_table_sql)
+                    conn.commit()
+                
+                # Append data to the specified table
+                combined_df.to_sql(self.table_name, conn, if_exists='append', index=False)
+                print(f"Successfully saved {len(combined_df)} rows for season {season} to {self.table_name} table")
+                
+                # Close connection
+                conn.close()
+                
+                # Add to overall match data and clear season data
+                self.match_data.extend(self.season_match_data)
+                self.season_match_data = []  # Clear for next season
+                
+                return True
+            
+            except Exception as e:
+                print(f"Error saving season {season} to database: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                return False
+                
+        except Exception as e:
+            print(f"Error saving season {season} results: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return False
+
     def scrape_season_matches(self, season):
         """Scrape matches for a specific season"""
         self.current_season = season
+        self.season_match_data = []  # Reset season data
         base_url = f"https://fbref.com/en/comps/{self.league_id}/{season}/schedule/{season}-{self.league}-Scores-and-Fixtures"
         
         try:
@@ -664,7 +736,7 @@ class MultiSeasonMatchDataScraper:
                 
                 match_data = self.get_match_data(match_url)
                 if match_data is not None:
-                    self.match_data.append(match_data)
+                    self.season_match_data.append(match_data)  # Add to season-specific data
                     matches_collected += 1
                     print(f"Successfully processed match data")
                 else:
@@ -677,6 +749,14 @@ class MultiSeasonMatchDataScraper:
             print(f"Processed {matches_processed} matches within date range")
             print(f"Skipped {matches_skipped} matches (duplicates)")
             print(f"Collected data for {matches_collected} new matches")
+            
+            # Save season data to database immediately
+            if matches_collected > 0:
+                print(f"\nSaving season {season} data to database...")
+                if self.save_season_results(season):
+                    print(f"✓ Season {season} data saved successfully")
+                else:
+                    print(f"✗ Failed to save season {season} data")
             
             return matches_processed, matches_collected, matches_skipped
             
@@ -718,71 +798,13 @@ class MultiSeasonMatchDataScraper:
         return total_collected > 0
 
     def save_results(self):
-        """Save results to both CSV and SQLite database"""
+        """Legacy method - now data is saved after each season"""
         if not self.match_data:
-            print("\nNo new match data collected")
-            return False
-            
-        try:
-            # Combine all match data into a single DataFrame
-            combined_df = pd.concat(self.match_data, ignore_index=True)
-            
-            # Save to SQLite database
-            try:
-                # Create the database file if it doesn't exist
-                conn = sqlite3.connect(self.db_path)
-                cursor = conn.cursor()
-                
-                # Check if table exists, create it if not
-                cursor.execute(f'''
-                    SELECT name FROM sqlite_master 
-                    WHERE type='table' AND name='{self.table_name}'
-                ''')
-                
-                if not cursor.fetchone():
-                    print(f"Creating {self.table_name} table as it doesn't exist")
-                    # Generate table creation SQL based on DataFrame columns
-                    # This is a simplistic approach - you might want to define specific types
-                    columns = []
-                    for col in combined_df.columns:
-                        if col in ['match_date']:
-                            columns.append(f'"{col}" TEXT')
-                        elif 'is_' in col:
-                            columns.append(f'"{col}" BOOLEAN')
-                        elif any(num in col for num in ['shots', 'xg', 'touches', 'psxg']):
-                            columns.append(f'"{col}" REAL')
-                        else:
-                            columns.append(f'"{col}" TEXT')
-                    
-                    create_table_sql = f'''
-                        CREATE TABLE {self.table_name} (
-                            {', '.join(columns)}
-                        )
-                    '''
-                    cursor.execute(create_table_sql)
-                    conn.commit()
-                
-                # Append data to the specified table
-                combined_df.to_sql(self.table_name, conn, if_exists='append', index=False)
-                print(f"Successfully appended {len(combined_df)} rows to {self.table_name} table")
-                
-                # Close connection
-                conn.close()
-                
-                print(f"\nTotal new events collected: {len(combined_df)}")
-                return True
-            
-            except Exception as e:
-                print(f"Error saving to database: {str(e)}")
-                import traceback
-                traceback.print_exc()
-                return False
-                
-        except Exception as e:
-            print(f"Error saving results: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            return False
+            print("\nNo match data to save (all data already saved per season)")
+            return True
+        else:
+            print(f"\nAll {len(self.match_data)} matches have been saved to database during processing")
+            return True
 
     def cleanup(self):
         """Clean up resources"""
@@ -793,7 +815,7 @@ class MultiSeasonMatchDataScraper:
         """Run the full scraping process for all seasons"""
         try:
             if self.scrape_all_seasons():
-                self.save_results()
+                self.save_results()  # This now just confirms data was saved
         finally:
             self.cleanup()
             print("\nScript completed")
