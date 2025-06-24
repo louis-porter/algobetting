@@ -213,21 +213,33 @@ class MultiSeasonMatchDataScraper:
         home_psxg = None
         away_psxg = None
 
-        # Extract away team's PSxG from home keeper table (reverse attribution)
-        if home_keeper_table:
-            tfoot = home_keeper_table.find('tfoot')
+        def extract_psxg_from_keeper_table(table):
+            """Extract PSxG from a keeper table (checking both tfoot and tbody)"""
+            # First try tfoot
+            tfoot = table.find('tfoot')
             if tfoot:
                 psxg_cell = tfoot.find('td', {'data-stat': 'gk_psxg'})
                 if psxg_cell:
-                    away_psxg = psxg_cell.get_text(strip=True)
+                    return psxg_cell.get_text(strip=True)
+            
+            # If not in tfoot, try tbody
+            tbody = table.find('tbody')
+            if tbody:
+                rows = tbody.find_all('tr')
+                for row in rows:
+                    psxg_cell = row.find('td', {'data-stat': 'gk_psxg'})
+                    if psxg_cell:
+                        return psxg_cell.get_text(strip=True)
+            
+            return None
+
+        # Extract away team's PSxG from home keeper table (reverse attribution)
+        if home_keeper_table:
+            away_psxg = extract_psxg_from_keeper_table(home_keeper_table)
 
         # Extract home team's PSxG from away keeper table (reverse attribution)
         if away_keeper_table:
-            tfoot = away_keeper_table.find('tfoot')
-            if tfoot:
-                psxg_cell = tfoot.find('td', {'data-stat': 'gk_psxg'})
-                if psxg_cell:
-                    home_psxg = psxg_cell.get_text(strip=True)
+            home_psxg = extract_psxg_from_keeper_table(away_keeper_table)
 
         return home_psxg, away_psxg
 
@@ -282,8 +294,7 @@ class MultiSeasonMatchDataScraper:
                 (r'stats_[a-z0-9]+_misc', 'misc'),
                 (r'stats_[a-z0-9]+_passing_types', 'pass_types'),
                 (r'stats_[a-z0-9]+_passing', 'passing'),
-                (r'stats_[a-z0-9]+_defense', 'defense'),
-                (r'stats_[a-z0-9]+_gca', 'gca'),  # Goal and Shot Creation Actions
+                (r'stats_[a-z0-9]+_defense', 'defense')
             ]
             
             # Extract all table types
@@ -321,25 +332,36 @@ class MultiSeasonMatchDataScraper:
             home_df_copy = home_df.copy()
             away_df_copy = away_df.copy()
             
-            # Add opposition stats to each team's dataframe
             if not home_df.empty and not away_df.empty:
-                # Add away team name as opp_team to home_df
+                # Create dictionaries for opposition stats to avoid DataFrame fragmentation
+                home_opp_stats = {}
+                away_opp_stats = {}
+                
+                # Add away team name as opp_team to home team
                 if 'team' in away_df_copy.columns:
-                    home_df['opp_team'] = away_df_copy['team'].values[0]
+                    home_opp_stats['opp_team'] = away_df_copy['team'].values[0]
 
-                # Add away team stats as opposition stats to home_df
+                # Add away team stats as opposition stats to home team
                 for col in away_df_copy.columns:
                     if col not in ['match_date', 'team', 'opponent', 'division', 'match_url', 'season', 'is_home']:
-                        home_df[f'opp_{col}'] = away_df_copy[col].values[0]
+                        home_opp_stats[f'opp_{col}'] = away_df_copy[col].values[0]
 
-                # Add home team name as opp_team to away_df
+                # Add home team name as opp_team to away team
                 if 'team' in home_df_copy.columns:
-                    away_df['opp_team'] = home_df_copy['team'].values[0]
+                    away_opp_stats['opp_team'] = home_df_copy['team'].values[0]
                 
-                # Add home team stats as opposition stats to away_df
+                # Add home team stats as opposition stats to away team
                 for col in home_df_copy.columns:
                     if col not in ['match_date', 'team', 'opponent', 'division', 'match_url', 'season', 'is_home']:
-                        away_df[f'opp_{col}'] = home_df_copy[col].values[0]
+                        away_opp_stats[f'opp_{col}'] = home_df_copy[col].values[0]
+                
+                # Convert dictionaries to DataFrames and concatenate efficiently
+                home_opp_df = pd.DataFrame([home_opp_stats])
+                away_opp_df = pd.DataFrame([away_opp_stats])
+                
+                # Concatenate horizontally (axis=1) to add opposition columns
+                home_df = pd.concat([home_df, home_opp_df], axis=1)
+                away_df = pd.concat([away_df, away_opp_df], axis=1)
                 
                 # HANDLE OWN GOALS: Add opponent's own goals to team's goals
                 # Check if we have own goals and regular goals columns
@@ -358,7 +380,7 @@ class MultiSeasonMatchDataScraper:
                         away_df['summary_goals'] = str(away_goals + home_og)
                     except Exception as e:
                         print(f"Error handling own goals for away team: {e}")
-            
+
             # Remove own_goals columns to prevent database issues
             columns_to_remove = ['misc_own_goals', 'opp_misc_own_goals']
             for col in columns_to_remove:
@@ -366,14 +388,21 @@ class MultiSeasonMatchDataScraper:
                     home_df = home_df.drop(columns=[col])
                 if col in away_df.columns:
                     away_df = away_df.drop(columns=[col])
+
             
             # Combine home and away into a single match DataFrame
             match_df = pd.concat([home_df, away_df], ignore_index=True)
-            
+
+            # Remove duplicate columns that appear under different prefixes
+            match_df = self.remove_duplicate_columns(match_df)
+
+            # Convert all stats to numeric types
+            match_df = self.convert_stats_to_numeric(match_df)
+
             # Mark this URL as processed
             self.add_processed_url(url)
-            
-            print(f"Extracted {len(match_df.columns)} total columns from match")
+
+            print(f"Extracted {len(match_df.columns)} total columns from match (after removing duplicates)")
             return match_df
 
         except Exception as e:
@@ -381,6 +410,72 @@ class MultiSeasonMatchDataScraper:
             import traceback
             traceback.print_exc()
             return None
+        
+
+    def convert_stats_to_numeric(self, df):
+        """Convert all stat columns to numeric types, keeping text columns as text"""
+        
+        # Columns that should remain as text
+        text_columns = [
+            'team', 'division', 'season', 'match_url', 'match_date', 'opp_team'
+        ]
+        
+        # Boolean columns that should remain boolean
+        boolean_columns = [
+            'is_home'
+        ]
+        
+        for col in df.columns:
+            # Skip text and boolean columns
+            if col in text_columns or col in boolean_columns:
+                continue
+                
+            # Convert all other columns to numeric
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+        
+        return df   
+
+    def remove_duplicate_columns(self, df):
+        """Automatically remove duplicate columns that exist under different table prefixes"""
+        
+        # Track base column names and which columns to keep/drop
+        base_columns = {}  # base_name -> first_column_with_that_base
+        columns_to_drop = []
+        
+        # Process all columns to find duplicates
+        for col in df.columns:
+            # Skip core columns that should never be removed
+            if col in ['team', 'is_home', 'match_date', 'division', 'season', 'match_url', 'opp_team']:
+                continue
+                
+            # Extract base name by removing table prefix
+            base_name = None
+            
+            if col.startswith('opp_'):
+                # Handle opposition columns: opp_prefix_base -> opp_base
+                opp_part = col[4:]  # Remove 'opp_'
+                if '_' in opp_part:
+                    prefix, base = opp_part.split('_', 1)
+                    base_name = f"opp_{base}"
+            elif '_' in col:
+                # Handle regular columns: prefix_base -> base
+                prefix, base = col.split('_', 1)
+                base_name = base
+            
+            # If we found a base name, check for duplicates
+            if base_name:
+                if base_name in base_columns:
+                    # Duplicate found - mark current column for removal
+                    columns_to_drop.append(col)
+                else:
+                    # First occurrence - keep this one
+                    base_columns[base_name] = col
+        
+        # Remove duplicate columns
+        if columns_to_drop:
+            df = df.drop(columns=columns_to_drop)
+        
+        return df
 
     def find_fixtures_table(self):
         try:
@@ -511,17 +606,16 @@ class MultiSeasonMatchDataScraper:
                 
                 if not cursor.fetchone():
                     print(f"Creating {self.table_name} table as it doesn't exist")
-                    # Generate table creation SQL based on DataFrame columns
+                    # Generate table creation SQL based on DataFrame columns with better typing
                     columns = []
                     for col in combined_df.columns:
-                        if col in ['match_date']:
+                        if col in ['team', 'division', 'season', 'match_url', 'match_date', 'opp_team']:
                             columns.append(f'"{col}" TEXT')
-                        elif 'is_' in col:
+                        elif col in ['is_home']:
                             columns.append(f'"{col}" BOOLEAN')
-                        elif any(num in col for num in ['shots', 'xg', 'touches', 'psxg', 'goals', 'cards']):
-                            columns.append(f'"{col}" REAL')
                         else:
-                            columns.append(f'"{col}" TEXT')
+                            # All other columns (stats) should be numeric
+                            columns.append(f'"{col}" REAL')
                     
                     create_table_sql = f'''
                         CREATE TABLE {self.table_name} (
@@ -556,6 +650,8 @@ class MultiSeasonMatchDataScraper:
             import traceback
             traceback.print_exc()
             return False
+    
+    
 
     def scrape_season_matches(self, season):
         """Scrape matches for a specific season"""
@@ -778,7 +874,9 @@ class MultiSeasonMatchDataScraper:
 
 if __name__ == "__main__":
     # Set the seasons and other parameters
-    seasons = ["2024-2025"]  # List of seasons to scrape
+    seasons = ["2017-2018", "2018-2019", "2019-2020",
+               "2020-2021", "2021-2022", "2022-2023",
+               "2023-2024"]  # List of seasons to scrape
     league = "Premier League"
     league_id = 9
     days_back = 90000  # Get matches from last X days
