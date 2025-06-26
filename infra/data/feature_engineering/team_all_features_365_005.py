@@ -6,7 +6,7 @@ conn = sqlite3.connect(r'C:\Users\Owner\dev\algobetting\infra\data\db\algobettin
 
 df = pd.read_sql_query("SELECT * FROM fbref_match_summary_v2", conn)
 
-def apply_weighted_avg(col, match_date, match_red, decay_rate=0.005, time_window=365):
+def apply_weighted_avg(col, match_date, match_red, current_match_date, decay_rate=0.005, time_window=365, min_games=5):
     # Create a mask for non-NaN values
     valid_mask = ~pd.isna(col)
     
@@ -19,11 +19,8 @@ def apply_weighted_avg(col, match_date, match_red, decay_rate=0.005, time_window
     valid_dates = match_date[valid_mask]
     valid_red = match_red[valid_mask]
     
-    # Get most recent date
-    recent_date = max(valid_dates)
-    
-    # Create a time window mask (only include matches within time_window days)
-    time_window_mask = (recent_date - valid_dates).dt.days <= time_window
+    # Create a time window mask (only include matches within time_window days BEFORE current match)
+    time_window_mask = (current_match_date - valid_dates).dt.days <= time_window
     
     # If no matches in the time window, return NaN
     if not time_window_mask.any():
@@ -34,8 +31,12 @@ def apply_weighted_avg(col, match_date, match_red, decay_rate=0.005, time_window
     valid_dates = valid_dates[time_window_mask]
     valid_red = valid_red[time_window_mask]
     
-    # Calculate weights for matches within the time window
-    match_weight = np.exp(-(recent_date - valid_dates).dt.days * decay_rate)
+    # Check if we have minimum required games
+    if len(valid_col) < min_games:
+        return np.nan
+    
+    # Calculate weights for matches within the time window (relative to current match date)
+    match_weight = np.exp(-(current_match_date - valid_dates).dt.days * decay_rate)
     
     # Reduce weight for matches with red cards
     match_weight = np.where(valid_red == 1, match_weight * 0.3, match_weight)
@@ -60,7 +61,7 @@ df['match_id'] = df['match_url']
 numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
 
 # Remove columns we don't want to process
-exclude_cols = ['match_red', 'summary_cards_red', 'opp_summary_cards_red', 'summary_minutes']  # Add any other columns to exclude
+exclude_cols = ['match_red', 'summary_cards_red', 'opp_summary_cards_red', 'is_home']
 numeric_cols = [col for col in numeric_cols if col not in exclude_cols]
 
 # Separate team stats (without opp_ prefix) and opponent stats (with opp_ prefix)
@@ -86,7 +87,8 @@ for team_name in df['team'].unique():
                 weighted_avg = apply_weighted_avg(
                     prev_matches[stat],
                     prev_matches['match_date'],
-                    prev_matches['match_red']
+                    prev_matches['match_red'],
+                    current_match['match_date']  # Pass current match date as reference
                 )
                 metrics_dict[f'team_rolling_{stat}'] = weighted_avg
             
@@ -95,7 +97,8 @@ for team_name in df['team'].unique():
                 weighted_avg = apply_weighted_avg(
                     prev_matches[stat],
                     prev_matches['match_date'],
-                    prev_matches['match_red']
+                    prev_matches['match_red'],
+                    current_match['match_date']  # Pass current match date as reference
                 )
                 # Remove 'opp_' prefix and add 'team_rolling_conceded_' prefix
                 clean_stat = stat.replace('opp_', '')
