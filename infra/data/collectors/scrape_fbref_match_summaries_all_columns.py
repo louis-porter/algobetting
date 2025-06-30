@@ -874,9 +874,12 @@ class MultiSeasonMatchDataScraper:
 
 if __name__ == "__main__":
     # Set the seasons and other parameters
-    seasons = ["2023-2024", "2024-2025"]  # List of seasons to scrape
-    league = "Championship"
-    league_id = 10
+    seasons = [
+        "2017-2018", "2018-2019", "2019-2020", "2020-2021", "2021-2022",
+        "2022-2023", "2023-2024", "2024-2025"
+    ] # List of seasons to scrape
+    league = "Serie A"
+    league_id = 11
     days_back = 90000  # Get matches from last X days
     table_name = "fbref_match_summary_v2"  # Table name in the database
     db_path = r"C:\Users\Owner\dev\algobetting\infra\data\db\algobetting.db"  # SQLite database file path
