@@ -581,6 +581,45 @@ class MultiSeasonMatchDataScraper:
         except Exception as e:
             print(f"Error ensuring All Rounds view: {e}")
             return False
+        
+    def filter_columns_to_match_table(self, combined_df):
+        """Filter DataFrame to only include columns that exist in the database table"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # Check if table exists
+            cursor.execute(f'''
+                SELECT name FROM sqlite_master 
+                WHERE type='table' AND name='{self.table_name}'
+            ''')
+            
+            if not cursor.fetchone():
+                # Table doesn't exist, return original DataFrame (it will be created)
+                conn.close()
+                return combined_df
+            
+            # Get existing table columns
+            cursor.execute(f"PRAGMA table_info({self.table_name})")
+            existing_columns = {info[1] for info in cursor.fetchall()}
+            conn.close()
+            
+            # Filter DataFrame to only include existing columns
+            df_columns = set(combined_df.columns)
+            missing_columns = df_columns - existing_columns
+            
+            if missing_columns:
+                print(f"Ignoring {len(missing_columns)} missing columns: {sorted(missing_columns)}")
+                # Keep only columns that exist in the table
+                columns_to_keep = [col for col in combined_df.columns if col in existing_columns]
+                filtered_df = combined_df[columns_to_keep]
+                return filtered_df
+            
+            return combined_df
+            
+        except Exception as e:
+            print(f"Error filtering columns: {e}")
+            return combined_df
 
     def save_season_results(self, season):
         """Save results for a specific season to the database"""
@@ -624,8 +663,14 @@ class MultiSeasonMatchDataScraper:
                     '''
                     cursor.execute(create_table_sql)
                     conn.commit()
+                else:
+                    # Table exists, filter DataFrame to match existing columns
+                    combined_df = self.filter_columns_to_match_table(combined_df)
                 
-                # Append data to the specified table
+                conn.close()
+                
+                # Now save the filtered data
+                conn = sqlite3.connect(self.db_path)
                 combined_df.to_sql(self.table_name, conn, if_exists='append', index=False)
                 print(f"Successfully saved {len(combined_df)} rows for season {season} to {self.table_name} table")
                 print(f"Total columns saved: {len(combined_df.columns)}")
@@ -874,9 +919,9 @@ class MultiSeasonMatchDataScraper:
 
 if __name__ == "__main__":
     # Set the seasons and other parameters
-    seasons = ["2023-2024", "2024-2025"]  # List of seasons to scrape
-    league = "Serie A"
-    league_id = 11
+    seasons = ["2024-2025"]  # List of seasons to scrape
+    league = "Serie B"
+    league_id = 18
     days_back = 90000  # Get matches from last X days
     table_name = "fbref_match_summary_v2"  # Table name in the database
     db_path = r"C:\Users\Owner\dev\algobetting\infra\data\db\algobetting.db"  # SQLite database file path
