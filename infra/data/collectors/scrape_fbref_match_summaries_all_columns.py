@@ -919,7 +919,7 @@ class MultiSeasonMatchDataScraper:
 
 if __name__ == "__main__":
     # Set the seasons and other parameters
-    seasons = ["2023-2024", "2022-2023", "2021-2022", "2020-2021", "2019-2020", "2018-2019", "2017-2018"] # List of seasons to scrape
+    seasons = ["2018-2019", "2017-2018"] # List of seasons to scrape
     league = "La Liga"
     league_id = 12
     days_back = 90000  # Get matches from last X days
