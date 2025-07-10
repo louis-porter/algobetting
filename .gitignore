@@ -1,0 +1,5 @@
+﻿*.db
+*.sqlite
+*.sqlite3
+infra/data/db/
+infra/data/db/algobetting.db
