@@ -109,28 +109,79 @@ def scrape_with_selenium(match_url):
         
         print("Looking for shot carousel...")
         
-        # First, let's try to get team names from the page
+        # First, let's try to get team names and their IDs from the page header
         team_names = {}
+        team_id_mapping = {}
+        
         try:
-            # Look for team names in various places on the page
-            team_elements = driver.find_elements(By.CSS_SELECTOR, '[class*="team"], [class*="Team"], h1, h2, .match-header')
+            # Look for team logos specifically in the match header area (not in shot details)
+            header_logos = driver.find_elements(By.CSS_SELECTOR, 'header img[src*="teamlogo"], [class*="header"] img[src*="teamlogo"], [class*="match"] img[src*="teamlogo"]')
             
-            for element in team_elements:
-                text = element.text.strip()
-                if 'vs' in text.lower() or 'v' in text:
-                    # Try to extract team names from "Team A vs Team B" format
-                    teams = text.replace(' vs ', '|').replace(' v ', '|').split('|')
-                    if len(teams) == 2:
-                        print(f"Found teams in text: {teams[0].strip()} vs {teams[1].strip()}")
+            # If no header logos found, look for larger logos (small vs xsmall)
+            if not header_logos:
+                all_logos = driver.find_elements(By.CSS_SELECTOR, 'img[src*="teamlogo"]')
+                # Filter for larger logos (small, medium) and avoid the xsmall ones used in shot details
+                header_logos = [logo for logo in all_logos if '_small.png' in logo.get_attribute('src') or '_medium.png' in logo.get_attribute('src')]
             
-            # Also get from URL
-            if "midtjylland" in match_url.lower() and "randers" in match_url.lower():
-                team_names['home'] = "FC Midtjylland"
-                team_names['away'] = "Randers FC"
-                print(f"Teams from URL: {team_names['home']} (home) vs {team_names['away']} (away)")
+            print("Found team logos in header:")
+            processed_ids = set()
+            
+            for logo in header_logos:
+                logo_url = logo.get_attribute('src')
+                # Extract team ID from logo URL
+                import re
+                team_id_match = re.search(r'teamlogo/(\d+)_', logo_url)
+                if team_id_match:
+                    team_id = team_id_match.group(1)
+                    
+                    # Skip if we already processed this team ID
+                    if team_id in processed_ids:
+                        continue
+                    processed_ids.add(team_id)
+                    
+                    print(f"  Team ID {team_id}: {logo_url}")
+                    
+                    # Try to find the team name near this logo
+                    try:
+                        # Look for text elements near the logo
+                        parent = logo.find_element(By.XPATH, '..')
+                        team_name_text = parent.text.strip()
+                        
+                        # If parent doesn't have good text, try grandparent
+                        if not team_name_text or len(team_name_text) < 3:
+                            grandparent = parent.find_element(By.XPATH, '..')
+                            team_name_text = grandparent.text.strip()
+                        
+                        # Clean up the team name
+                        if team_name_text:
+                            # Remove numbers, extra whitespace, and common unwanted text
+                            team_name_clean = re.sub(r'\d+', '', team_name_text)  # Remove numbers
+                            team_name_clean = re.sub(r'[\'"]', '', team_name_clean)  # Remove quotes
+                            team_name_clean = re.sub(r'\s+', ' ', team_name_clean).strip()  # Clean whitespace
+                            
+                            # Skip if it's too short or looks like a player name
+                            if len(team_name_clean) > 2 and not team_name_clean.lower().startswith('edward'):
+                                team_id_mapping[team_id] = team_name_clean
+                                print(f"    Mapped to: {team_name_clean}")
+                    except:
+                        pass
+            
+            # Extract team names from page title as fallback
+            title_element = driver.find_element(By.TAG_NAME, 'title')
+            title_text = title_element.get_attribute('innerHTML')
+            
+            vs_match = re.search(r'([^-]+?)\s+(?:vs?\.?|v\.?|-)\s+([^-]+?)(?:\s|$|\()', title_text, re.IGNORECASE)
+            if vs_match:
+                team1 = vs_match.group(1).strip()
+                team2 = vs_match.group(2).strip()
+                print(f"Found teams from title: {team1} vs {team2}")
+                team_names['team1'] = team1
+                team_names['team2'] = team2
+                            
         except Exception as e:
-            print(f"Error finding team names: {e}")
-            team_names = {'home': 'Home Team', 'away': 'Away Team'}
+            print(f"Could not extract team info from page: {e}")
+            team_names = {}
+            team_id_mapping = {}
         
         all_shots = []
         seen_shots = set()  # Track shots we've already seen
@@ -163,6 +214,33 @@ def scrape_with_selenium(match_url):
                         current_shot['xgot'] = None
                     
                     current_shot['xg_values'] = xg_values  # Keep original for compatibility
+                
+                # Get shot result (Goal, Save, Miss, etc.)
+                try:
+                    # Look for result text/indicators in the shot carousel
+                    result_elements = driver.find_elements(By.CSS_SELECTOR, '[class*="result"], [class*="Result"], [class*="outcome"], [class*="Outcome"]')
+                    
+                    shot_result = None
+                    for result_element in result_elements:
+                        result_text = result_element.text.strip()
+                        if result_text and any(keyword in result_text.lower() for keyword in ['goal', 'save', 'miss', 'block', 'post', 'bar', 'wide', 'over']):
+                            shot_result = result_text
+                            break
+                    
+                    # If no specific result element found, try to infer from other indicators
+                    if not shot_result:
+                        # Check if there are any goal indicators or other result clues
+                        all_text_elements = driver.find_elements(By.CSS_SELECTOR, 'span, div')
+                        for element in all_text_elements:
+                            text = element.text.strip().lower()
+                            if text in ['goal', 'save', 'saved', 'miss', 'missed', 'blocked', 'post', 'crossbar', 'wide', 'over']:
+                                shot_result = text.title()
+                                break
+                    
+                    current_shot['result'] = shot_result or 'Unknown'
+                    
+                except Exception as e:
+                    current_shot['result'] = 'Unknown'
                 
                 # Get player info and team ID for current shot
                 try:
@@ -211,7 +289,9 @@ def scrape_with_selenium(match_url):
                     if current_shot.get('xgot') is not None:
                         xg_display += f", xGOT: {current_shot.get('xgot')}"
                     
-                    print(f"Shot {len(all_shots)}: {current_shot['player_info']} [Team {team_id}] - {xg_display}")
+                    result_display = f" [{current_shot.get('result', 'Unknown')}]" if current_shot.get('result') != 'Unknown' else ""
+                    
+                    print(f"Shot {len(all_shots)}: {current_shot['player_info']} [Team {team_id}] - {xg_display}{result_display}")
                 
                 # Try to find and click the next button
                 try:
@@ -246,20 +326,29 @@ def scrape_with_selenium(match_url):
             
             print(f"Found team IDs: {list(team_ids)}")
             
-            # Try to map team IDs to team names
-            # We can make educated guesses or look for more info on the page
+            # Try to map team IDs to team names using the logo mapping we found
             team_id_to_name = {}
             
-            if len(team_ids) == 2:
+            if team_id_mapping:
+                # We have direct ID-to-name mapping from logos - use this!
+                print(f"Using logo-based mapping: {team_id_mapping}")
+                team_id_to_name = team_id_mapping
+            elif len(team_ids) == 2 and team_names.get('team1') and team_names.get('team2'):
+                # Fallback to title-based mapping
                 team_list = list(team_ids)
-                # Since FC Midtjylland is home, try to determine which ID belongs to which team
-                # This might require manual mapping or additional page analysis
-                team_id_to_name[team_list[0]] = team_names.get('home', f'Team {team_list[0]}')
-                team_id_to_name[team_list[1]] = team_names.get('away', f'Team {team_list[1]}')
-            elif len(team_ids) == 1:
-                # Only one team ID found - this might be an issue
-                team_id = list(team_ids)[0]
-                team_id_to_name[team_id] = f'Team {team_id}'
+                sorted_ids = sorted(team_list)
+                
+                team_id_to_name[sorted_ids[0]] = team_names['team1']
+                team_id_to_name[sorted_ids[1]] = team_names['team2']
+                
+                print(f"Using title-based mapping:")
+                print(f"  Team {sorted_ids[0]} -> {team_names['team1']}")
+                print(f"  Team {sorted_ids[1]} -> {team_names['team2']}")
+            else:
+                # Last resort - generic names
+                for team_id in team_ids:
+                    team_id_to_name[team_id] = f'Team {team_id}'
+                print(f"Using generic mapping: {team_id_to_name}")
             
             # Compile results with team name mapping
             xg_values = []
@@ -275,7 +364,8 @@ def scrape_with_selenium(match_url):
                     team_stats[team_name] = {
                         'shots': 0,
                         'total_xg': 0.0,
-                        'total_xgot': 0.0
+                        'total_xgot': 0.0,
+                        'team_id': team_id
                     }
                 
                 # Add to team stats
@@ -290,14 +380,15 @@ def scrape_with_selenium(match_url):
                     'team_name': team_name,
                     'xg': shot.get('xg'),
                     'xgot': shot.get('xgot'),
+                    'result': shot.get('result'),
                     'xg_values': shot['xg_values']
                 })
                 xg_values.extend(shot['xg_values'])
             
-            # Print detailed summary
+            # Print summary without extra verification
             print(f"\n=== DETAILED SUMMARY ===")
             for team_name, stats in team_stats.items():
-                print(f"{team_name}:")
+                print(f"{team_name} (ID: {stats['team_id']}):")
                 print(f"  Shots: {stats['shots']}")
                 print(f"  Total xG: {stats['total_xg']:.2f}")
                 if stats['total_xgot'] > 0:
@@ -367,4 +458,3 @@ if __name__ == "__main__":
             print(f"  {shot['player_info']}: {shot['xg_value']}")
     else:
         print("Selenium approach also failed. The match might not have detailed xG data yet.")
-        
