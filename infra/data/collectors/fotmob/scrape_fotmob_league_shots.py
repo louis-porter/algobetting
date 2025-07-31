@@ -8,8 +8,80 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.service import Service
+from datetime import datetime
 
-def scrape_league_rounds(base_url, max_rounds=30):
+def parse_date_to_iso(date_string, default_year=None):
+    """
+    Convert various date formats to YYYY-MM-DD format
+    Extracts year from the date string if present, otherwise uses current year or default_year
+    """
+    if not date_string or date_string.strip() == '':
+        return None
+    
+    date_string = date_string.strip()
+    
+    try:
+        # Handle formats like "Sunday 25 May 2024", "Monday 1 June", "25 May 2023", etc.
+        # Remove day of week if present
+        date_parts = date_string.split()
+        
+        # If first part looks like a day of week, remove it
+        days_of_week = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+        if len(date_parts) > 0 and date_parts[0].lower() in days_of_week:
+            date_parts = date_parts[1:]
+        
+        # Extract year if present
+        year = None
+        day = None
+        month = None
+        
+        # Look for a 4-digit year in the date parts
+        for i, part in enumerate(date_parts):
+            if part.isdigit() and len(part) == 4 and 1900 <= int(part) <= 2100:
+                year = int(part)
+                # Remove year from date_parts for further processing
+                date_parts = date_parts[:i] + date_parts[i+1:]
+                break
+        
+        # If no year found, use default_year or current year
+        if year is None:
+            if default_year:
+                year = default_year
+            else:
+                year = datetime.now().year
+        
+        if len(date_parts) >= 2:
+            day = date_parts[0]
+            month = date_parts[1]
+            
+            # Month name to number mapping
+            month_map = {
+                'january': 1, 'jan': 1,
+                'february': 2, 'feb': 2,
+                'march': 3, 'mar': 3,
+                'april': 4, 'apr': 4,
+                'may': 5,
+                'june': 6, 'jun': 6,
+                'july': 7, 'jul': 7,
+                'august': 8, 'aug': 8,
+                'september': 9, 'sep': 9, 'sept': 9,
+                'october': 10, 'oct': 10,
+                'november': 11, 'nov': 11,
+                'december': 12, 'dec': 12
+            }
+            
+            month_num = month_map.get(month.lower())
+            if month_num and day.isdigit():
+                formatted_date = f"{year}-{month_num:02d}-{int(day):02d}"
+                return formatted_date
+    
+    except Exception as e:
+        print(f"Error parsing date '{date_string}': {e}")
+    
+    # If parsing fails, return the original string
+    return date_string
+
+def scrape_league_rounds(base_url, max_rounds=30, season_year=None):
     """
     Scrape match URLs and dates from all FotMob league rounds
     """
@@ -84,6 +156,9 @@ def scrape_league_rounds(base_url, max_rounds=30):
                             current_date = match_date
                             print(f"  Date: {current_date}")
                         
+                        # Convert date to ISO format
+                        iso_date = parse_date_to_iso(match_date, season_year)
+                        
                         # Get match URL
                         match_href = match_element.get_attribute('href')
                         if match_href:
@@ -122,7 +197,7 @@ def scrape_league_rounds(base_url, max_rounds=30):
                             
                             match_data = {
                                 'round': round_num + 1,
-                                'date': match_date,
+                                'date': iso_date,  # Now using ISO format
                                 'home_team': home_team,
                                 'away_team': away_team,
                                 'score': score,
@@ -132,7 +207,7 @@ def scrape_league_rounds(base_url, max_rounds=30):
                             
                             all_matches.append(match_data)
                             round_matches += 1
-                            print(f"    {home_team} vs {away_team} - {score} [{status}]")
+                            print(f"    {home_team} vs {away_team} - {score} [{status}] ({iso_date})")
                     
                     except Exception as e:
                         print(f"    Error processing match: {e}")
@@ -372,13 +447,13 @@ def scrape_match_xg(match_url, match_date, home_team, away_team, round_num):
             driver.quit()
         return []
 
-def scrape_full_league_xg(base_url, max_rounds=30, start_from_round=1):
+def scrape_full_league_xg(base_url, max_rounds=30, start_from_round=1, season_year=None):
     """
     Scrape all matches and their xG data from a league
     """
     
     print("Step 1: Getting all match URLs...")
-    matches = scrape_league_rounds(base_url, max_rounds)
+    matches = scrape_league_rounds(base_url, max_rounds, season_year)
     
     if not matches:
         print("No matches found!")
@@ -431,6 +506,21 @@ def save_shots_to_csv(shots, filename='league_xg_data.csv'):
         print("No shot data to save")
         return
     
+    # Debug: Check what we're actually getting
+    print(f"Debug: shots type = {type(shots)}")
+    if shots:
+        print(f"Debug: first item type = {type(shots[0])}")
+        print(f"Debug: first item = {shots[0]}")
+    
+    # Ensure we have a list of dictionaries
+    if not isinstance(shots, list):
+        print("Error: shots is not a list")
+        return
+    
+    if not shots or not isinstance(shots[0], dict):
+        print("Error: shots does not contain dictionaries")
+        return
+    
     with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
         fieldnames = ['round', 'match_date', 'home_team', 'away_team', 'match_url', 
                      'player_name', 'team_name', 'minute', 'xg', 'xgot', 'result']
@@ -438,7 +528,10 @@ def save_shots_to_csv(shots, filename='league_xg_data.csv'):
         
         writer.writeheader()
         for shot in shots:
-            writer.writerow(shot)
+            if isinstance(shot, dict):
+                writer.writerow(shot)
+            else:
+                print(f"Warning: Skipping non-dict item: {shot}")
     
     print(f"Shot data saved to {filename}")
 
@@ -481,17 +574,25 @@ def save_matches_summary_to_csv(matches, filename='league_matches_summary.csv'):
 
 # Usage
 if __name__ == "__main__":
-    base_url = "https://www.fotmob.com/en-GB/leagues/46/matches/superligaen?season=2024-2025&group=by-round&round=0"
+    base_url = "https://www.fotmob.com/en-GB/leagues/47/matches/premier-league?season=2024-2025&group=by-round&round=0"
     
     # Scrape all matches and their xG data
-    all_shots = scrape_full_league_xg(base_url, max_rounds=1, start_from_round=1)
+    # You can specify season_year if you know it, otherwise it will use current year for dates without year
+    result = scrape_full_league_xg(base_url, max_rounds=38, start_from_round=1, season_year=2024)
+    
+    # Handle the return value properly
+    if isinstance(result, tuple) and len(result) == 2:
+        all_shots, matches = result
+    else:
+        all_shots = result
+        matches = []
     
     if all_shots:
-        save_shots_to_csv(all_shots, 'superligaen_complete_xg_data.csv')
+        save_shots_to_csv(all_shots, 'prem_complete_xg_data.csv')
         
         # Print summary
-        matches_processed = len(set(shot['match_url'] for shot in all_shots))
-        rounds_processed = len(set(shot['round'] for shot in all_shots))
+        matches_processed = len(set(shot['match_url'] for shot in all_shots if isinstance(shot, dict)))
+        rounds_processed = len(set(shot['round'] for shot in all_shots if isinstance(shot, dict)))
         
         print(f"\n=== SUMMARY ===")
         print(f"Rounds processed: {rounds_processed}")

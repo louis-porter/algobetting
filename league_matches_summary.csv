@@ -1,7 +1,381 @@
 round,match_date,home_team,home_goals,away_team,away_goals,match_url
-1,Friday 19 July 2024,AGF,1,FC Midtjylland,1,https://www.fotmob.com/en-GB/matches/agf-vs-fc-midtjylland/25zalp#4494869
-1,Friday 19 July 2024,Nordsjælland,3,AaB,0,https://www.fotmob.com/en-GB/matches/aab-vs-nordsjaelland/2vspam#4494870
-1,Sunday 21 July 2024,Silkeborg,1,Sønderjyske,0,https://www.fotmob.com/en-GB/matches/silkeborg-vs-sonderjyske/2d1w70#4494871
-1,Sunday 21 July 2024,Vejle Boldklub,2,Randers FC,3,https://www.fotmob.com/en-GB/matches/vejle-boldklub-vs-randers-fc/2ag2fv#4494872
-1,Sunday 21 July 2024,Viborg,3,Brøndby IF,3,https://www.fotmob.com/en-GB/matches/brondby-if-vs-viborg/2u9pi0#4494873
-1,Monday 22 July 2024,Lyngby,0,FC København,2,https://www.fotmob.com/en-GB/matches/fc-kobenhavn-vs-lyngby/2rojuq#4494874
+1,2024-08-16,Manchester United,1,Fulham,0,https://www.fotmob.com/en-GB/matches/fulham-vs-manchester-united/3cqww9#4506263
+1,2024-08-17,Ipswich Town,0,Liverpool,2,https://www.fotmob.com/en-GB/matches/liverpool-vs-ipswich-town/2ugv0q#4506264
+1,2024-08-17,Arsenal,2,Wolverhampton Wanderers,0,https://www.fotmob.com/en-GB/matches/wolverhampton-wanderers-vs-arsenal/2t3bl7#4506265
+1,2024-08-17,Everton,0,Brighton & Hove Albion,3,https://www.fotmob.com/en-GB/matches/everton-vs-brighton-hove-albion/2y16fs#4506266
+1,2024-08-17,Newcastle United,1,Southampton,0,https://www.fotmob.com/en-GB/matches/southampton-vs-newcastle-united/2weqvy#4506267
+1,2024-08-17,Nottingham Forest,1,AFC Bournemouth,1,https://www.fotmob.com/en-GB/matches/afc-bournemouth-vs-nottingham-forest/2y4tjb#4506268
+1,2024-08-17,West Ham United,1,Aston Villa,2,https://www.fotmob.com/en-GB/matches/west-ham-united-vs-aston-villa/2yexzh#4506269
+1,2024-08-18,Brentford,2,Crystal Palace,1,https://www.fotmob.com/en-GB/matches/crystal-palace-vs-brentford/38a4jj#4506270
+1,2024-08-18,Chelsea,0,Manchester City,2,https://www.fotmob.com/en-GB/matches/chelsea-vs-manchester-city/2d55kw#4506271
+1,2024-08-19,Leicester City,1,Tottenham Hotspur,1,https://www.fotmob.com/en-GB/matches/leicester-city-vs-tottenham-hotspur/2buxqa#4506272
+2,2024-08-24,Brighton & Hove Albion,2,Manchester United,1,https://www.fotmob.com/en-GB/matches/brighton-hove-albion-vs-manchester-united/3goccs#4506275
+2,2024-08-24,Crystal Palace,0,West Ham United,2,https://www.fotmob.com/en-GB/matches/west-ham-united-vs-crystal-palace/2toa9m#4506276
+2,2024-08-24,Fulham,2,Leicester City,1,https://www.fotmob.com/en-GB/matches/leicester-city-vs-fulham/2pa0dp#4506277
+2,2024-08-24,Manchester City,4,Ipswich Town,1,https://www.fotmob.com/en-GB/matches/manchester-city-vs-ipswich-town/2sc4e3#4506279
+2,2024-08-24,Southampton,0,Nottingham Forest,1,https://www.fotmob.com/en-GB/matches/southampton-vs-nottingham-forest/2vri2l#4506280
+2,2024-08-24,Tottenham Hotspur,4,Everton,0,https://www.fotmob.com/en-GB/matches/tottenham-hotspur-vs-everton/2gmqxt#4506281
+2,2024-08-24,Aston Villa,0,Arsenal,2,https://www.fotmob.com/en-GB/matches/arsenal-vs-aston-villa/3c06vg#4506274
+2,2024-08-25,AFC Bournemouth,1,Newcastle United,1,https://www.fotmob.com/en-GB/matches/afc-bournemouth-vs-newcastle-united/2ysbu8#4506273
+2,2024-08-25,Wolverhampton Wanderers,2,Chelsea,6,https://www.fotmob.com/en-GB/matches/chelsea-vs-wolverhampton-wanderers/2emb2j#4506282
+2,2024-08-25,Liverpool,2,Brentford,0,https://www.fotmob.com/en-GB/matches/liverpool-vs-brentford/2uusjv#4506278
+3,2024-08-31,Arsenal,1,Brighton & Hove Albion,1,https://www.fotmob.com/en-GB/matches/arsenal-vs-brighton-hove-albion/3bfk5g#4506283
+3,2024-08-31,Brentford,3,Southampton,1,https://www.fotmob.com/en-GB/matches/southampton-vs-brentford/2stunb#4506284
+3,2024-08-31,Everton,2,AFC Bournemouth,3,https://www.fotmob.com/en-GB/matches/everton-vs-afc-bournemouth/2hkv2h#4506286
+3,2024-08-31,Ipswich Town,1,Fulham,1,https://www.fotmob.com/en-GB/matches/fulham-vs-ipswich-town/38hr4t#4506287
+3,2024-08-31,Leicester City,1,Aston Villa,2,https://www.fotmob.com/en-GB/matches/leicester-city-vs-aston-villa/2tbzby#4506288
+3,2024-08-31,Nottingham Forest,1,Wolverhampton Wanderers,1,https://www.fotmob.com/en-GB/matches/wolverhampton-wanderers-vs-nottingham-forest/2xa4gh#4506291
+3,2024-08-31,West Ham United,1,Manchester City,3,https://www.fotmob.com/en-GB/matches/manchester-city-vs-west-ham-united/2f5prf#4506292
+3,2024-09-01,Chelsea,1,Crystal Palace,1,https://www.fotmob.com/en-GB/matches/chelsea-vs-crystal-palace/2rhvvj#4506285
+3,2024-09-01,Newcastle United,2,Tottenham Hotspur,1,https://www.fotmob.com/en-GB/matches/tottenham-hotspur-vs-newcastle-united/2xr2ka#4506290
+3,2024-09-01,Manchester United,0,Liverpool,3,https://www.fotmob.com/en-GB/matches/liverpool-vs-manchester-united/2ygkcb#4506289
+4,2024-09-14,Southampton,0,Manchester United,3,https://www.fotmob.com/en-GB/matches/southampton-vs-manchester-united/2wecfr#4506300
+4,2024-09-14,Brighton & Hove Albion,0,Ipswich Town,0,https://www.fotmob.com/en-GB/matches/ipswich-town-vs-brighton-hove-albion/3ccoit#4506295
+4,2024-09-14,Crystal Palace,2,Leicester City,2,https://www.fotmob.com/en-GB/matches/leicester-city-vs-crystal-palace/2opi6m#4506296
+4,2024-09-14,Fulham,1,West Ham United,1,https://www.fotmob.com/en-GB/matches/west-ham-united-vs-fulham/2u9b5i#4506297
+4,2024-09-14,Liverpool,0,Nottingham Forest,1,https://www.fotmob.com/en-GB/matches/liverpool-vs-nottingham-forest/2xthvt#4506298
+4,2024-09-14,Manchester City,2,Brentford,1,https://www.fotmob.com/en-GB/matches/manchester-city-vs-brentford/2spwom#4506299
+4,2024-09-14,Aston Villa,3,Everton,2,https://www.fotmob.com/en-GB/matches/everton-vs-aston-villa/2ykmb4#4506294
+4,2024-09-14,AFC Bournemouth,0,Chelsea,1,https://www.fotmob.com/en-GB/matches/chelsea-vs-afc-bournemouth/2fe5n5#4506293
+4,2024-09-15,Tottenham Hotspur,0,Arsenal,1,https://www.fotmob.com/en-GB/matches/tottenham-hotspur-vs-arsenal/2sx06r#4506301
+4,2024-09-15,Wolverhampton Wanderers,1,Newcastle United,2,https://www.fotmob.com/en-GB/matches/wolverhampton-wanderers-vs-newcastle-united/2xxjcy#4506302
+5,2024-09-21,West Ham United,0,Chelsea,3,https://www.fotmob.com/en-GB/matches/chelsea-vs-west-ham-united/2f5ck5#4506312
+5,2024-09-21,Aston Villa,3,Wolverhampton Wanderers,1,https://www.fotmob.com/en-GB/matches/wolverhampton-wanderers-vs-aston-villa/2xtwe7#4506303
+5,2024-09-21,Fulham,3,Newcastle United,1,https://www.fotmob.com/en-GB/matches/fulham-vs-newcastle-united/3crcfp#4506306
+5,2024-09-21,Leicester City,1,Everton,1,https://www.fotmob.com/en-GB/matches/leicester-city-vs-everton/2coib1#4506307
+5,2024-09-21,Liverpool,3,AFC Bournemouth,0,https://www.fotmob.com/en-GB/matches/liverpool-vs-afc-bournemouth/2he69q#4506308
+5,2024-09-21,Southampton,1,Ipswich Town,1,https://www.fotmob.com/en-GB/matches/southampton-vs-ipswich-town/2sg232#4506310
+5,2024-09-21,Tottenham Hotspur,3,Brentford,1,https://www.fotmob.com/en-GB/matches/tottenham-hotspur-vs-brentford/2u5c8b#4506311
+5,2024-09-21,Crystal Palace,0,Manchester United,0,https://www.fotmob.com/en-GB/matches/crystal-palace-vs-manchester-united/3c42bz#4506305
+5,2024-09-22,Brighton & Hove Albion,2,Nottingham Forest,2,https://www.fotmob.com/en-GB/matches/nottingham-forest-vs-brighton-hove-albion/3fzdi8#4506304
+5,2024-09-22,Manchester City,2,Arsenal,2,https://www.fotmob.com/en-GB/matches/manchester-city-vs-arsenal/2rhvvi#4506309
+6,2024-09-28,Newcastle United,1,Manchester City,1,https://www.fotmob.com/en-GB/matches/manchester-city-vs-newcastle-united/2waqez#4506320
+6,2024-09-28,Arsenal,4,Leicester City,2,https://www.fotmob.com/en-GB/matches/leicester-city-vs-arsenal/2op49y#4506314
+6,2024-09-28,Brentford,1,West Ham United,1,https://www.fotmob.com/en-GB/matches/west-ham-united-vs-brentford/2uwdxd#4506315
+6,2024-09-28,Chelsea,4,Brighton & Hove Albion,2,https://www.fotmob.com/en-GB/matches/chelsea-vs-brighton-hove-albion/2vni1p#4506316
+6,2024-09-28,Everton,2,Crystal Palace,1,https://www.fotmob.com/en-GB/matches/everton-vs-crystal-palace/2tttz7#4506317
+6,2024-09-28,Nottingham Forest,0,Fulham,1,https://www.fotmob.com/en-GB/matches/fulham-vs-nottingham-forest/3c2cdu#4506321
+6,2024-09-28,Wolverhampton Wanderers,1,Liverpool,2,https://www.fotmob.com/en-GB/matches/wolverhampton-wanderers-vs-liverpool/2gm0as#4506322
+6,2024-09-29,Ipswich Town,2,Aston Villa,2,https://www.fotmob.com/en-GB/matches/ipswich-town-vs-aston-villa/3cxe3h#4506318
+6,2024-09-29,Manchester United,0,Tottenham Hotspur,3,https://www.fotmob.com/en-GB/matches/tottenham-hotspur-vs-manchester-united/2xqo0r#4506319
+6,2024-09-30,AFC Bournemouth,3,Southampton,1,https://www.fotmob.com/en-GB/matches/southampton-vs-afc-bournemouth/2fi742#4506313
+7,2024-10-05,Crystal Palace,0,Liverpool,1,https://www.fotmob.com/en-GB/matches/liverpool-vs-crystal-palace/2tmp8g#4506328
+7,2024-10-05,Arsenal,3,Southampton,1,https://www.fotmob.com/en-GB/matches/southampton-vs-arsenal/2rlsz3#4506323
+7,2024-10-05,Brentford,5,Wolverhampton Wanderers,3,https://www.fotmob.com/en-GB/matches/wolverhampton-wanderers-vs-brentford/2ubp0j#4506325
+7,2024-10-05,Leicester City,1,AFC Bournemouth,0,https://www.fotmob.com/en-GB/matches/leicester-city-vs-afc-bournemouth/2cs4hk#4506330
+7,2024-10-05,Manchester City,3,Fulham,2,https://www.fotmob.com/en-GB/matches/manchester-city-vs-fulham/2s32rr#4506331
+7,2024-10-05,West Ham United,4,Ipswich Town,1,https://www.fotmob.com/en-GB/matches/west-ham-united-vs-ipswich-town/2uigac#4506332
+7,2024-10-05,Everton,0,Newcastle United,0,https://www.fotmob.com/en-GB/matches/everton-vs-newcastle-united/2yo9qd#4506329
+7,2024-10-06,Aston Villa,0,Manchester United,0,https://www.fotmob.com/en-GB/matches/aston-villa-vs-manchester-united/3h9f6s#4506324
+7,2024-10-06,Chelsea,1,Nottingham Forest,1,https://www.fotmob.com/en-GB/matches/chelsea-vs-nottingham-forest/2vn3ne#4506327
+7,2024-10-06,Brighton & Hove Albion,3,Tottenham Hotspur,2,https://www.fotmob.com/en-GB/matches/tottenham-hotspur-vs-brighton-hove-albion/2x42vj#4506326
+8,2024-10-19,Tottenham Hotspur,4,West Ham United,1,https://www.fotmob.com/en-GB/matches/tottenham-hotspur-vs-west-ham-united/2ghkm2#4506401
+8,2024-10-19,Fulham,1,Aston Villa,3,https://www.fotmob.com/en-GB/matches/fulham-vs-aston-villa/3cnglp#4506394
+8,2024-10-19,Manchester United,2,Brentford,1,https://www.fotmob.com/en-GB/matches/brentford-vs-manchester-united/3dfzjk#4506397
+8,2024-10-19,Newcastle United,0,Brighton & Hove Albion,1,https://www.fotmob.com/en-GB/matches/brighton-hove-albion-vs-newcastle-united/3gos5a#4506398
+8,2024-10-19,Southampton,2,Leicester City,3,https://www.fotmob.com/en-GB/matches/leicester-city-vs-southampton/2anx5y#4506400
+8,2024-10-19,Ipswich Town,0,Everton,2,https://www.fotmob.com/en-GB/matches/everton-vs-ipswich-town/2uo0th#4506395
+8,2024-10-19,AFC Bournemouth,2,Arsenal,0,https://www.fotmob.com/en-GB/matches/afc-bournemouth-vs-arsenal/2txefx#4506393
+8,2024-10-20,Wolverhampton Wanderers,1,Manchester City,2,https://www.fotmob.com/en-GB/matches/manchester-city-vs-wolverhampton-wanderers/2emo8d#4506402
+8,2024-10-20,Liverpool,2,Chelsea,1,https://www.fotmob.com/en-GB/matches/chelsea-vs-liverpool/2f3vr7#4506396
+8,2024-10-21,Nottingham Forest,1,Crystal Palace,0,https://www.fotmob.com/en-GB/matches/crystal-palace-vs-nottingham-forest/3bfk5h#4506399
+9,2024-10-25,Leicester City,1,Nottingham Forest,3,https://www.fotmob.com/en-GB/matches/leicester-city-vs-nottingham-forest/2ssmph#4506413
+9,2024-10-26,Aston Villa,1,AFC Bournemouth,1,https://www.fotmob.com/en-GB/matches/afc-bournemouth-vs-aston-villa/2yooch#4506404
+9,2024-10-26,Brentford,4,Ipswich Town,3,https://www.fotmob.com/en-GB/matches/ipswich-town-vs-brentford/396dqp#4506405
+9,2024-10-26,Brighton & Hove Albion,2,Wolverhampton Wanderers,2,https://www.fotmob.com/en-GB/matches/wolverhampton-wanderers-vs-brighton-hove-albion/2xaiyv#4506406
+9,2024-10-26,Manchester City,1,Southampton,0,https://www.fotmob.com/en-GB/matches/manchester-city-vs-southampton/2d9569#4506415
+9,2024-10-26,Everton,1,Fulham,1,https://www.fotmob.com/en-GB/matches/everton-vs-fulham/2uevfp#4506410
+9,2024-10-27,Chelsea,2,Newcastle United,1,https://www.fotmob.com/en-GB/matches/chelsea-vs-newcastle-united/2wabz1#4506407
+9,2024-10-27,Crystal Palace,1,Tottenham Hotspur,0,https://www.fotmob.com/en-GB/matches/tottenham-hotspur-vs-crystal-palace/2sxee8#4506409
+9,2024-10-27,West Ham United,2,Manchester United,1,https://www.fotmob.com/en-GB/matches/west-ham-united-vs-manchester-united/2yi6pt#4506417
+9,2024-10-27,Arsenal,2,Liverpool,2,https://www.fotmob.com/en-GB/matches/liverpool-vs-arsenal/2tmaz7#4506403
+10,2024-11-02,Newcastle United,1,Arsenal,0,https://www.fotmob.com/en-GB/matches/arsenal-vs-newcastle-united/3c42by#4506468
+10,2024-11-02,AFC Bournemouth,2,Manchester City,1,https://www.fotmob.com/en-GB/matches/manchester-city-vs-afc-bournemouth/2feiv3#4506463
+10,2024-11-02,Ipswich Town,1,Leicester City,1,https://www.fotmob.com/en-GB/matches/leicester-city-vs-ipswich-town/2pixek#4506465
+10,2024-11-02,Liverpool,2,Brighton & Hove Albion,1,https://www.fotmob.com/en-GB/matches/liverpool-vs-brighton-hove-albion/2xtwfj#4506466
+10,2024-11-02,Nottingham Forest,3,West Ham United,0,https://www.fotmob.com/en-GB/matches/west-ham-united-vs-nottingham-forest/2xv42z#4506469
+10,2024-11-02,Southampton,1,Everton,0,https://www.fotmob.com/en-GB/matches/southampton-vs-everton/2feiut#4506470
+10,2024-11-02,Wolverhampton Wanderers,2,Crystal Palace,2,https://www.fotmob.com/en-GB/matches/wolverhampton-wanderers-vs-crystal-palace/2t3pt4#4506472
+10,2024-11-03,Tottenham Hotspur,4,Aston Villa,1,https://www.fotmob.com/en-GB/matches/tottenham-hotspur-vs-aston-villa/2xnfpj#4506471
+10,2024-11-03,Manchester United,1,Chelsea,1,https://www.fotmob.com/en-GB/matches/chelsea-vs-manchester-united/2w9xj5#4506467
+10,2024-11-04,Fulham,2,Brentford,1,https://www.fotmob.com/en-GB/matches/fulham-vs-brentford/38wlut#4506464
+11,2024-11-09,Brentford,3,AFC Bournemouth,2,https://www.fotmob.com/en-GB/matches/afc-bournemouth-vs-brentford/2v5yfp#4506473
+11,2024-11-09,Crystal Palace,0,Fulham,2,https://www.fotmob.com/en-GB/matches/crystal-palace-vs-fulham/37llbg#4506476
+11,2024-11-09,West Ham United,0,Everton,0,https://www.fotmob.com/en-GB/matches/west-ham-united-vs-everton/2hby1v#4506481
+11,2024-11-09,Wolverhampton Wanderers,2,Southampton,0,https://www.fotmob.com/en-GB/matches/southampton-vs-wolverhampton-wanderers/2eqbw8#4506482
+11,2024-11-09,Brighton & Hove Albion,2,Manchester City,1,https://www.fotmob.com/en-GB/matches/manchester-city-vs-brighton-hove-albion/2vnwg2#4506474
+11,2024-11-09,Liverpool,2,Aston Villa,0,https://www.fotmob.com/en-GB/matches/liverpool-vs-aston-villa/2ydbmv#4506477
+11,2024-11-10,Manchester United,3,Leicester City,0,https://www.fotmob.com/en-GB/matches/leicester-city-vs-manchester-united/2tf58q#4506478
+11,2024-11-10,Nottingham Forest,1,Newcastle United,3,https://www.fotmob.com/en-GB/matches/nottingham-forest-vs-newcastle-united/3gocct#4506479
+11,2024-11-10,Tottenham Hotspur,1,Ipswich Town,2,https://www.fotmob.com/en-GB/matches/tottenham-hotspur-vs-ipswich-town/2trgfe#4506480
+11,2024-11-10,Chelsea,1,Arsenal,1,https://www.fotmob.com/en-GB/matches/chelsea-vs-arsenal/2rhhrp#4506475
+12,2024-11-23,Leicester City,1,Chelsea,2,https://www.fotmob.com/en-GB/matches/leicester-city-vs-chelsea/2ajzrp#4506539
+12,2024-11-23,AFC Bournemouth,1,Brighton & Hove Albion,2,https://www.fotmob.com/en-GB/matches/afc-bournemouth-vs-brighton-hove-albion/2y583t#4506533
+12,2024-11-23,Arsenal,3,Nottingham Forest,0,https://www.fotmob.com/en-GB/matches/arsenal-vs-nottingham-forest/3bf4p3#4506534
+12,2024-11-23,Aston Villa,2,Crystal Palace,2,https://www.fotmob.com/en-GB/matches/crystal-palace-vs-aston-villa/3c0md7#4506535
+12,2024-11-23,Everton,0,Brentford,0,https://www.fotmob.com/en-GB/matches/everton-vs-brentford/2v1yu4#4506536
+12,2024-11-23,Fulham,1,Wolverhampton Wanderers,4,https://www.fotmob.com/en-GB/matches/wolverhampton-wanderers-vs-fulham/2tookg#4506537
+12,2024-11-23,Manchester City,0,Tottenham Hotspur,4,https://www.fotmob.com/en-GB/matches/manchester-city-vs-tottenham-hotspur/2egtpx#4506540
+12,2024-11-24,Southampton,2,Liverpool,3,https://www.fotmob.com/en-GB/matches/southampton-vs-liverpool/2f7wzk#4506542
+12,2024-11-24,Ipswich Town,1,Manchester United,1,https://www.fotmob.com/en-GB/matches/ipswich-town-vs-manchester-united/3d0uj5#4506538
+12,2024-11-25,Newcastle United,0,West Ham United,2,https://www.fotmob.com/en-GB/matches/west-ham-united-vs-newcastle-united/2yilb8#4506541
+13,2024-11-29,Brighton & Hove Albion,1,Southampton,1,https://www.fotmob.com/en-GB/matches/southampton-vs-brighton-hove-albion/2vrwh7#4506411
+13,2024-11-30,Brentford,4,Leicester City,1,https://www.fotmob.com/en-GB/matches/leicester-city-vs-brentford/2pwipa#4506408
+13,2024-11-30,Crystal Palace,1,Newcastle United,1,https://www.fotmob.com/en-GB/matches/crystal-palace-vs-newcastle-united/3c4hty#4506414
+13,2024-11-30,Nottingham Forest,1,Ipswich Town,0,https://www.fotmob.com/en-GB/matches/ipswich-town-vs-nottingham-forest/3cc90b#4506419
+13,2024-11-30,Wolverhampton Wanderers,2,AFC Bournemouth,4,https://www.fotmob.com/en-GB/matches/wolverhampton-wanderers-vs-afc-bournemouth/2gwdd2#4506422
+13,2024-11-30,West Ham United,2,Arsenal,5,https://www.fotmob.com/en-GB/matches/west-ham-united-vs-arsenal/2tnw09#4506421
+13,2024-12-01,Chelsea,3,Aston Villa,0,https://www.fotmob.com/en-GB/matches/chelsea-vs-aston-villa/2w6q11#4506412
+13,2024-12-01,Manchester United,4,Everton,0,https://www.fotmob.com/en-GB/matches/everton-vs-manchester-united/2ynv4k#4506418
+13,2024-12-01,Tottenham Hotspur,1,Fulham,1,https://www.fotmob.com/en-GB/matches/tottenham-hotspur-vs-fulham/2tici0#4506420
+13,2024-12-01,Liverpool,2,Manchester City,0,https://www.fotmob.com/en-GB/matches/manchester-city-vs-liverpool/2f48yd#4506416
+14,2024-12-03,Ipswich Town,0,Crystal Palace,1,https://www.fotmob.com/en-GB/matches/crystal-palace-vs-ipswich-town/37vb92#4506428
+14,2024-12-03,Leicester City,3,West Ham United,1,https://www.fotmob.com/en-GB/matches/leicester-city-vs-west-ham-united/2cjg6k#4506429
+14,2024-12-04,Everton,4,Wolverhampton Wanderers,0,https://www.fotmob.com/en-GB/matches/wolverhampton-wanderers-vs-everton/2gso21#4506426
+14,2024-12-04,Manchester City,3,Nottingham Forest,0,https://www.fotmob.com/en-GB/matches/manchester-city-vs-nottingham-forest/2vni1q#4506430
+14,2024-12-04,Newcastle United,3,Liverpool,3,https://www.fotmob.com/en-GB/matches/liverpool-vs-newcastle-united/2ygyxm#4506431
+14,2024-12-04,Southampton,1,Chelsea,5,https://www.fotmob.com/en-GB/matches/chelsea-vs-southampton/2d8s47#4506432
+14,2024-12-04,Arsenal,2,Manchester United,0,https://www.fotmob.com/en-GB/matches/arsenal-vs-manchester-united/3c3mu0#4506424
+14,2024-12-04,Aston Villa,3,Brentford,1,https://www.fotmob.com/en-GB/matches/brentford-vs-aston-villa/3dciw4#4506425
+14,2024-12-05,Fulham,3,Brighton & Hove Albion,1,https://www.fotmob.com/en-GB/matches/fulham-vs-brighton-hove-albion/3c2rvp#4506427
+14,2024-12-05,AFC Bournemouth,1,Tottenham Hotspur,0,https://www.fotmob.com/en-GB/matches/tottenham-hotspur-vs-afc-bournemouth/2gqg4e#4506423
+15,2024-12-07,Aston Villa,1,Southampton,0,https://www.fotmob.com/en-GB/matches/southampton-vs-aston-villa/2wb4v7#4506433
+15,2024-12-07,Brentford,4,Newcastle United,2,https://www.fotmob.com/en-GB/matches/brentford-vs-newcastle-united/3dgf4m#4506434
+15,2024-12-07,Crystal Palace,2,Manchester City,2,https://www.fotmob.com/en-GB/matches/manchester-city-vs-crystal-palace/2ri9zd#4506435
+15,2024-12-07,Manchester United,2,Nottingham Forest,3,https://www.fotmob.com/en-GB/matches/nottingham-forest-vs-manchester-united/3gnwkc#4506440
+15,2024-12-08,Fulham,1,Arsenal,1,https://www.fotmob.com/en-GB/matches/arsenal-vs-fulham/37l643#4506437
+15,2024-12-08,Ipswich Town,1,AFC Bournemouth,2,https://www.fotmob.com/en-GB/matches/afc-bournemouth-vs-ipswich-town/2us05c#4506438
+15,2024-12-08,Leicester City,2,Brighton & Hove Albion,2,https://www.fotmob.com/en-GB/matches/leicester-city-vs-brighton-hove-albion/2st0wm#4506439
+15,2024-12-08,Tottenham Hotspur,3,Chelsea,4,https://www.fotmob.com/en-GB/matches/chelsea-vs-tottenham-hotspur/2eggkj#4506441
+15,2024-12-09,West Ham United,2,Wolverhampton Wanderers,1,https://www.fotmob.com/en-GB/matches/wolverhampton-wanderers-vs-west-ham-united/2gnhk2#4506442
+15,2024-02-12,Everton,2,Liverpool,2,https://www.fotmob.com/en-GB/matches/liverpool-vs-everton/2hagld#4506436
+16,2024-12-14,Arsenal,0,Everton,0,https://www.fotmob.com/en-GB/matches/everton-vs-arsenal/2ttfpg#4506444
+16,2024-12-14,Liverpool,2,Fulham,2,https://www.fotmob.com/en-GB/matches/liverpool-vs-fulham/2u7pyg#4506447
+16,2024-12-14,Newcastle United,4,Leicester City,0,https://www.fotmob.com/en-GB/matches/leicester-city-vs-newcastle-united/2tfjhg#4506449
+16,2024-12-14,Wolverhampton Wanderers,1,Ipswich Town,2,https://www.fotmob.com/en-GB/matches/wolverhampton-wanderers-vs-ipswich-town/2txss2#4506452
+16,2024-12-14,Nottingham Forest,2,Aston Villa,1,https://www.fotmob.com/en-GB/matches/nottingham-forest-vs-aston-villa/3gke9k#4506450
+16,2024-12-15,Brighton & Hove Albion,1,Crystal Palace,3,https://www.fotmob.com/en-GB/matches/crystal-palace-vs-brighton-hove-albion/3bfzlv#4506445
+16,2024-12-15,Manchester City,1,Manchester United,2,https://www.fotmob.com/en-GB/matches/manchester-city-vs-manchester-united/2wabz2#4506448
+16,2024-12-15,Chelsea,2,Brentford,1,https://www.fotmob.com/en-GB/matches/chelsea-vs-brentford/2spihp#4506446
+16,2024-12-15,Southampton,0,Tottenham Hotspur,5,https://www.fotmob.com/en-GB/matches/southampton-vs-tottenham-hotspur/2ekh9c#4506451
+16,2024-12-16,AFC Bournemouth,1,West Ham United,1,https://www.fotmob.com/en-GB/matches/west-ham-united-vs-afc-bournemouth/2hfnrc#4506443
+17,2024-12-21,Aston Villa,2,Manchester City,1,https://www.fotmob.com/en-GB/matches/manchester-city-vs-aston-villa/2w74gq#4506453
+17,2024-12-21,Brentford,0,Nottingham Forest,2,https://www.fotmob.com/en-GB/matches/brentford-vs-nottingham-forest/3crchb#4506454
+17,2024-12-21,Ipswich Town,0,Newcastle United,4,https://www.fotmob.com/en-GB/matches/ipswich-town-vs-newcastle-united/3d1a38#4506458
+17,2024-12-21,West Ham United,1,Brighton & Hove Albion,1,https://www.fotmob.com/en-GB/matches/west-ham-united-vs-brighton-hove-albion/2xvimt#4506462
+17,2024-12-21,Crystal Palace,1,Arsenal,5,https://www.fotmob.com/en-GB/matches/arsenal-vs-crystal-palace/36ytc8#4506455
+17,2024-12-22,Everton,0,Chelsea,0,https://www.fotmob.com/en-GB/matches/chelsea-vs-everton/2fahgy#4506456
+17,2024-12-22,Fulham,0,Southampton,0,https://www.fotmob.com/en-GB/matches/southampton-vs-fulham/2s70ac#4506457
+17,2024-12-22,Leicester City,0,Wolverhampton Wanderers,3,https://www.fotmob.com/en-GB/matches/leicester-city-vs-wolverhampton-wanderers/2c0p1m#4506459
+17,2024-12-22,Manchester United,0,AFC Bournemouth,3,https://www.fotmob.com/en-GB/matches/afc-bournemouth-vs-manchester-united/2yrx85#4506460
+17,2024-12-22,Tottenham Hotspur,3,Liverpool,6,https://www.fotmob.com/en-GB/matches/tottenham-hotspur-vs-liverpool/2gg3ek#4506461
+18,2024-12-26,Manchester City,1,Everton,1,https://www.fotmob.com/en-GB/matches/manchester-city-vs-everton/2fauom#4506488
+18,2024-12-26,AFC Bournemouth,0,Crystal Palace,0,https://www.fotmob.com/en-GB/matches/afc-bournemouth-vs-crystal-palace/2txspy#4506483
+18,2024-12-26,Chelsea,1,Fulham,2,https://www.fotmob.com/en-GB/matches/chelsea-vs-fulham/2s2omg#4506486
+18,2024-12-26,Newcastle United,3,Aston Villa,0,https://www.fotmob.com/en-GB/matches/aston-villa-vs-newcastle-united/3h9v0m#4506489
+18,2024-12-26,Nottingham Forest,1,Tottenham Hotspur,0,https://www.fotmob.com/en-GB/matches/tottenham-hotspur-vs-nottingham-forest/2x3odl#4506490
+18,2024-12-26,Southampton,0,West Ham United,1,https://www.fotmob.com/en-GB/matches/southampton-vs-west-ham-united/2f9dtq#4506491
+18,2024-12-26,Wolverhampton Wanderers,2,Manchester United,0,https://www.fotmob.com/en-GB/matches/wolverhampton-wanderers-vs-manchester-united/2xx4sz#4506492
+18,2024-12-26,Liverpool,3,Leicester City,1,https://www.fotmob.com/en-GB/matches/leicester-city-vs-liverpool/2ci06a#4506487
+18,2024-12-27,Brighton & Hove Albion,0,Brentford,0,https://www.fotmob.com/en-GB/matches/brentford-vs-brighton-hove-albion/3crs0s#4506485
+18,2024-12-27,Arsenal,1,Ipswich Town,0,https://www.fotmob.com/en-GB/matches/arsenal-vs-ipswich-town/37uw12#4506484
+19,2024-12-29,Leicester City,0,Manchester City,2,https://www.fotmob.com/en-GB/matches/leicester-city-vs-manchester-city/2akcmb#4506499
+19,2024-12-29,Crystal Palace,2,Southampton,1,https://www.fotmob.com/en-GB/matches/southampton-vs-crystal-palace/2rm738#4506495
+19,2024-12-29,Everton,0,Nottingham Forest,2,https://www.fotmob.com/en-GB/matches/everton-vs-nottingham-forest/2y0rvk#4506496
+19,2024-12-29,Fulham,2,AFC Bournemouth,2,https://www.fotmob.com/en-GB/matches/afc-bournemouth-vs-fulham/2uiul6#4506497
+19,2024-12-29,Tottenham Hotspur,2,Wolverhampton Wanderers,2,https://www.fotmob.com/en-GB/matches/tottenham-hotspur-vs-wolverhampton-wanderers/2fydv8#4506501
+19,2024-12-29,West Ham United,0,Liverpool,5,https://www.fotmob.com/en-GB/matches/liverpool-vs-west-ham-united/2h59kq#4506502
+19,2024-12-30,Aston Villa,2,Brighton & Hove Albion,2,https://www.fotmob.com/en-GB/matches/brighton-hove-albion-vs-aston-villa/3gku1s#4506493
+19,2024-12-30,Ipswich Town,2,Chelsea,0,https://www.fotmob.com/en-GB/matches/chelsea-vs-ipswich-town/2sbq85#4506498
+19,2024-12-30,Manchester United,0,Newcastle United,2,https://www.fotmob.com/en-GB/matches/manchester-united-vs-newcastle-united/3hddo2#4506500
+19,2024-01-01,Brentford,1,Arsenal,3,https://www.fotmob.com/en-GB/matches/arsenal-vs-brentford/389pak#4506494
+20,2024-01-04,Tottenham Hotspur,1,Newcastle United,2,https://www.fotmob.com/en-GB/matches/tottenham-hotspur-vs-newcastle-united/2xr2ka#4506511
+20,2024-01-04,AFC Bournemouth,1,Everton,0,https://www.fotmob.com/en-GB/matches/everton-vs-afc-bournemouth/2hkv2h#4506503
+20,2024-01-04,Aston Villa,2,Leicester City,1,https://www.fotmob.com/en-GB/matches/leicester-city-vs-aston-villa/2tbzby#4506504
+20,2024-01-04,Crystal Palace,1,Chelsea,1,https://www.fotmob.com/en-GB/matches/chelsea-vs-crystal-palace/2rhvvj#4506506
+20,2024-01-04,Manchester City,4,West Ham United,1,https://www.fotmob.com/en-GB/matches/manchester-city-vs-west-ham-united/2f5prf#4506509
+20,2024-01-04,Southampton,0,Brentford,5,https://www.fotmob.com/en-GB/matches/southampton-vs-brentford/2stunb#4506510
+20,2024-01-04,Brighton & Hove Albion,1,Arsenal,1,https://www.fotmob.com/en-GB/matches/arsenal-vs-brighton-hove-albion/3bfk5g#4506505
+20,2024-01-05,Fulham,2,Ipswich Town,2,https://www.fotmob.com/en-GB/matches/fulham-vs-ipswich-town/38hr4t#4506507
+20,2024-01-05,Liverpool,2,Manchester United,2,https://www.fotmob.com/en-GB/matches/liverpool-vs-manchester-united/2ygkcb#4506508
+20,2024-01-06,Wolverhampton Wanderers,0,Nottingham Forest,3,https://www.fotmob.com/en-GB/matches/wolverhampton-wanderers-vs-nottingham-forest/2xa4gh#4506512
+21,2024-01-14,Brentford,2,Manchester City,2,https://www.fotmob.com/en-GB/matches/manchester-city-vs-brentford/2spwom#4506514
+21,2024-01-14,Chelsea,2,AFC Bournemouth,2,https://www.fotmob.com/en-GB/matches/chelsea-vs-afc-bournemouth/2fe5n5#4506520
+21,2024-01-14,West Ham United,3,Fulham,2,https://www.fotmob.com/en-GB/matches/west-ham-united-vs-fulham/2u9b5i#4506519
+21,2024-01-14,Nottingham Forest,1,Liverpool,1,https://www.fotmob.com/en-GB/matches/liverpool-vs-nottingham-forest/2xthvt#4506518
+21,2024-01-15,Everton,0,Aston Villa,1,https://www.fotmob.com/en-GB/matches/everton-vs-aston-villa/2ykmb4#4506515
+21,2024-01-15,Leicester City,0,Crystal Palace,2,https://www.fotmob.com/en-GB/matches/leicester-city-vs-crystal-palace/2opi6m#4506517
+21,2024-01-15,Newcastle United,3,Wolverhampton Wanderers,0,https://www.fotmob.com/en-GB/matches/wolverhampton-wanderers-vs-newcastle-united/2xxjcy#4506521
+21,2024-01-15,Arsenal,2,Tottenham Hotspur,1,https://www.fotmob.com/en-GB/matches/tottenham-hotspur-vs-arsenal/2sx06r#4506513
+21,2024-01-16,Ipswich Town,0,Brighton & Hove Albion,2,https://www.fotmob.com/en-GB/matches/ipswich-town-vs-brighton-hove-albion/3ccoit#4506516
+21,2024-01-16,Manchester United,3,Southampton,1,https://www.fotmob.com/en-GB/matches/southampton-vs-manchester-united/2wecfr#4506522
+22,2024-01-18,Newcastle United,1,AFC Bournemouth,4,https://www.fotmob.com/en-GB/matches/afc-bournemouth-vs-newcastle-united/2ysbu8#4506530
+22,2024-01-18,Brentford,0,Liverpool,2,https://www.fotmob.com/en-GB/matches/liverpool-vs-brentford/2uusjv#4506524
+22,2024-01-18,Leicester City,0,Fulham,2,https://www.fotmob.com/en-GB/matches/leicester-city-vs-fulham/2pa0dp#4506528
+22,2024-01-18,West Ham United,0,Crystal Palace,2,https://www.fotmob.com/en-GB/matches/west-ham-united-vs-crystal-palace/2toa9m#4506532
+22,2024-01-18,Arsenal,2,Aston Villa,2,https://www.fotmob.com/en-GB/matches/arsenal-vs-aston-villa/3c06vg#4506523
+22,2024-01-19,Everton,3,Tottenham Hotspur,2,https://www.fotmob.com/en-GB/matches/tottenham-hotspur-vs-everton/2gmqxt#4506526
+22,2024-01-19,Manchester United,1,Brighton & Hove Albion,3,https://www.fotmob.com/en-GB/matches/brighton-hove-albion-vs-manchester-united/3goccs#4506529
+22,2024-01-19,Nottingham Forest,3,Southampton,2,https://www.fotmob.com/en-GB/matches/southampton-vs-nottingham-forest/2vri2l#4506531
+22,2024-01-19,Ipswich Town,0,Manchester City,6,https://www.fotmob.com/en-GB/matches/manchester-city-vs-ipswich-town/2sc4e3#4506527
+22,2024-01-20,Chelsea,3,Wolverhampton Wanderers,1,https://www.fotmob.com/en-GB/matches/chelsea-vs-wolverhampton-wanderers/2emb2j#4506525
+23,2024-01-25,AFC Bournemouth,5,Nottingham Forest,0,https://www.fotmob.com/en-GB/matches/afc-bournemouth-vs-nottingham-forest/2y4tjb#4506603
+23,2024-01-25,Brighton & Hove Albion,0,Everton,1,https://www.fotmob.com/en-GB/matches/everton-vs-brighton-hove-albion/2y16fs#4506605
+23,2024-01-25,Liverpool,4,Ipswich Town,1,https://www.fotmob.com/en-GB/matches/liverpool-vs-ipswich-town/2ugv0q#4506608
+23,2024-01-25,Southampton,1,Newcastle United,3,https://www.fotmob.com/en-GB/matches/southampton-vs-newcastle-united/2weqvy#4506610
+23,2024-01-25,Wolverhampton Wanderers,0,Arsenal,1,https://www.fotmob.com/en-GB/matches/wolverhampton-wanderers-vs-arsenal/2t3bl7#4506612
+23,2024-01-25,Manchester City,3,Chelsea,1,https://www.fotmob.com/en-GB/matches/chelsea-vs-manchester-city/2d55kw#4506609
+23,2024-01-26,Crystal Palace,1,Brentford,2,https://www.fotmob.com/en-GB/matches/crystal-palace-vs-brentford/38a4jj#4506606
+23,2024-01-26,Tottenham Hotspur,1,Leicester City,2,https://www.fotmob.com/en-GB/matches/leicester-city-vs-tottenham-hotspur/2buxqa#4506611
+23,2024-01-26,Aston Villa,1,West Ham United,1,https://www.fotmob.com/en-GB/matches/west-ham-united-vs-aston-villa/2yexzh#4506604
+23,2024-01-26,Fulham,0,Manchester United,1,https://www.fotmob.com/en-GB/matches/fulham-vs-manchester-united/3cqww9#4506607
+24,2024-02-01,Nottingham Forest,7,Brighton & Hove Albion,0,https://www.fotmob.com/en-GB/matches/nottingham-forest-vs-brighton-hove-albion/3fzdi8#4506621
+24,2024-02-01,AFC Bournemouth,0,Liverpool,2,https://www.fotmob.com/en-GB/matches/liverpool-vs-afc-bournemouth/2he69q#4506613
+24,2024-02-01,Everton,4,Leicester City,0,https://www.fotmob.com/en-GB/matches/leicester-city-vs-everton/2coib1#4506617
+24,2024-02-01,Ipswich Town,1,Southampton,2,https://www.fotmob.com/en-GB/matches/southampton-vs-ipswich-town/2sg232#4506618
+24,2024-02-01,Newcastle United,1,Fulham,2,https://www.fotmob.com/en-GB/matches/fulham-vs-newcastle-united/3crcfp#4506620
+24,2024-02-01,Wolverhampton Wanderers,2,Aston Villa,0,https://www.fotmob.com/en-GB/matches/wolverhampton-wanderers-vs-aston-villa/2xtwe7#4506622
+24,2024-02-02,Brentford,0,Tottenham Hotspur,2,https://www.fotmob.com/en-GB/matches/tottenham-hotspur-vs-brentford/2u5c8b#4506615
+24,2024-02-02,Manchester United,0,Crystal Palace,2,https://www.fotmob.com/en-GB/matches/crystal-palace-vs-manchester-united/3c42bz#4506619
+24,2024-02-02,Arsenal,5,Manchester City,1,https://www.fotmob.com/en-GB/matches/manchester-city-vs-arsenal/2rhvvi#4506614
+24,2024-02-03,Chelsea,2,West Ham United,1,https://www.fotmob.com/en-GB/matches/chelsea-vs-west-ham-united/2f5ck5#4506616
+25,2024-02-14,Brighton & Hove Albion,3,Chelsea,0,https://www.fotmob.com/en-GB/matches/chelsea-vs-brighton-hove-albion/2vni1p#4506624
+25,2024-02-15,Leicester City,0,Arsenal,2,https://www.fotmob.com/en-GB/matches/leicester-city-vs-arsenal/2op49y#4506627
+25,2024-02-15,Aston Villa,1,Ipswich Town,1,https://www.fotmob.com/en-GB/matches/ipswich-town-vs-aston-villa/3cxe3h#4506623
+25,2024-02-15,Fulham,2,Nottingham Forest,1,https://www.fotmob.com/en-GB/matches/fulham-vs-nottingham-forest/3c2cdu#4506626
+25,2024-02-15,Manchester City,4,Newcastle United,0,https://www.fotmob.com/en-GB/matches/manchester-city-vs-newcastle-united/2waqez#4506629
+25,2024-02-15,Southampton,1,AFC Bournemouth,3,https://www.fotmob.com/en-GB/matches/southampton-vs-afc-bournemouth/2fi742#4506630
+25,2024-02-15,West Ham United,0,Brentford,1,https://www.fotmob.com/en-GB/matches/west-ham-united-vs-brentford/2uwdxd#4506632
+25,2024-02-15,Crystal Palace,1,Everton,2,https://www.fotmob.com/en-GB/matches/everton-vs-crystal-palace/2tttz7#4506625
+25,2024-02-16,Liverpool,2,Wolverhampton Wanderers,1,https://www.fotmob.com/en-GB/matches/wolverhampton-wanderers-vs-liverpool/2gm0as#4506628
+25,2024-02-16,Tottenham Hotspur,1,Manchester United,0,https://www.fotmob.com/en-GB/matches/tottenham-hotspur-vs-manchester-united/2xqo0r#4506631
+26,2024-02-21,Leicester City,0,Brentford,4,https://www.fotmob.com/en-GB/matches/leicester-city-vs-brentford/2pwipa#4506639
+26,2024-02-22,Everton,2,Manchester United,2,https://www.fotmob.com/en-GB/matches/everton-vs-manchester-united/2ynv4k#4506636
+26,2024-02-22,AFC Bournemouth,0,Wolverhampton Wanderers,1,https://www.fotmob.com/en-GB/matches/wolverhampton-wanderers-vs-afc-bournemouth/2gwdd2#4506633
+26,2024-02-22,Arsenal,0,West Ham United,1,https://www.fotmob.com/en-GB/matches/west-ham-united-vs-arsenal/2tnw09#4506634
+26,2024-02-22,Fulham,0,Crystal Palace,2,https://www.fotmob.com/en-GB/matches/crystal-palace-vs-fulham/37llbg#4506637
+26,2024-02-22,Ipswich Town,1,Tottenham Hotspur,4,https://www.fotmob.com/en-GB/matches/tottenham-hotspur-vs-ipswich-town/2trgfe#4506638
+26,2024-02-22,Southampton,0,Brighton & Hove Albion,4,https://www.fotmob.com/en-GB/matches/southampton-vs-brighton-hove-albion/2vrwh7#4506642
+26,2024-02-22,Aston Villa,2,Chelsea,1,https://www.fotmob.com/en-GB/matches/chelsea-vs-aston-villa/2w6q11#4506635
+26,2024-02-23,Newcastle United,4,Nottingham Forest,3,https://www.fotmob.com/en-GB/matches/nottingham-forest-vs-newcastle-united/3gocct#4506641
+26,2024-02-23,Manchester City,0,Liverpool,2,https://www.fotmob.com/en-GB/matches/manchester-city-vs-liverpool/2f48yd#4506640
+27,2024-02-25,Brighton & Hove Albion,2,AFC Bournemouth,1,https://www.fotmob.com/en-GB/matches/afc-bournemouth-vs-brighton-hove-albion/2y583t#4506334
+27,2024-02-25,Crystal Palace,4,Aston Villa,1,https://www.fotmob.com/en-GB/matches/crystal-palace-vs-aston-villa/3c0md7#4506339
+27,2024-02-25,Wolverhampton Wanderers,1,Fulham,2,https://www.fotmob.com/en-GB/matches/wolverhampton-wanderers-vs-fulham/2tookg#4506338
+27,2024-02-25,Chelsea,4,Southampton,0,https://www.fotmob.com/en-GB/matches/chelsea-vs-southampton/2d8s47#4506340
+27,2024-02-26,Brentford,1,Everton,1,https://www.fotmob.com/en-GB/matches/everton-vs-brentford/2v1yu4#4506333
+27,2024-02-26,Manchester United,3,Ipswich Town,2,https://www.fotmob.com/en-GB/matches/ipswich-town-vs-manchester-united/3d0uj5#4506342
+27,2024-02-26,Nottingham Forest,0,Arsenal,0,https://www.fotmob.com/en-GB/matches/arsenal-vs-nottingham-forest/3bf4p3#4506335
+27,2024-02-26,Tottenham Hotspur,0,Manchester City,1,https://www.fotmob.com/en-GB/matches/manchester-city-vs-tottenham-hotspur/2egtpx#4506336
+27,2024-02-26,Liverpool,2,Newcastle United,0,https://www.fotmob.com/en-GB/matches/liverpool-vs-newcastle-united/2ygyxm#4506341
+27,2024-02-27,West Ham United,2,Leicester City,0,https://www.fotmob.com/en-GB/matches/leicester-city-vs-west-ham-united/2cjg6k#4506337
+28,2024-03-08,Nottingham Forest,1,Manchester City,0,https://www.fotmob.com/en-GB/matches/manchester-city-vs-nottingham-forest/2vni1q#4506349
+28,2024-03-08,Brighton & Hove Albion,2,Fulham,1,https://www.fotmob.com/en-GB/matches/fulham-vs-brighton-hove-albion/3c2rvp#4506344
+28,2024-03-08,Crystal Palace,1,Ipswich Town,0,https://www.fotmob.com/en-GB/matches/crystal-palace-vs-ipswich-town/37vb92#4506346
+28,2024-03-08,Liverpool,3,Southampton,1,https://www.fotmob.com/en-GB/matches/southampton-vs-liverpool/2f7wzk#4506347
+28,2024-03-08,Brentford,0,Aston Villa,1,https://www.fotmob.com/en-GB/matches/brentford-vs-aston-villa/3dciw4#4506343
+28,2024-03-08,Wolverhampton Wanderers,1,Everton,1,https://www.fotmob.com/en-GB/matches/wolverhampton-wanderers-vs-everton/2gso21#4506352
+28,2024-03-09,Chelsea,1,Leicester City,0,https://www.fotmob.com/en-GB/matches/leicester-city-vs-chelsea/2ajzrp#4506345
+28,2024-03-09,Tottenham Hotspur,2,AFC Bournemouth,2,https://www.fotmob.com/en-GB/matches/tottenham-hotspur-vs-afc-bournemouth/2gqg4e#4506350
+28,2024-03-09,Manchester United,1,Arsenal,1,https://www.fotmob.com/en-GB/matches/arsenal-vs-manchester-united/3c3mu0#4506348
+28,2024-03-10,West Ham United,0,Newcastle United,1,https://www.fotmob.com/en-GB/matches/west-ham-united-vs-newcastle-united/2yilb8#4506351
+29,2024-02-19,Aston Villa,2,Liverpool,2,https://www.fotmob.com/en-GB/matches/liverpool-vs-aston-villa/2ydbmv#4506355
+29,2024-03-15,Everton,1,West Ham United,1,https://www.fotmob.com/en-GB/matches/west-ham-united-vs-everton/2hby1v#4506356
+29,2024-03-15,Ipswich Town,2,Nottingham Forest,4,https://www.fotmob.com/en-GB/matches/ipswich-town-vs-nottingham-forest/3cc90b#4506358
+29,2024-03-15,Southampton,1,Wolverhampton Wanderers,2,https://www.fotmob.com/en-GB/matches/southampton-vs-wolverhampton-wanderers/2eqbw8#4506362
+29,2024-03-15,Manchester City,2,Brighton & Hove Albion,2,https://www.fotmob.com/en-GB/matches/manchester-city-vs-brighton-hove-albion/2vnwg2#4506360
+29,2024-03-15,AFC Bournemouth,1,Brentford,2,https://www.fotmob.com/en-GB/matches/afc-bournemouth-vs-brentford/2v5yfp#4506353
+29,2024-03-16,Arsenal,1,Chelsea,0,https://www.fotmob.com/en-GB/matches/chelsea-vs-arsenal/2rhhrp#4506354
+29,2024-03-16,Fulham,2,Tottenham Hotspur,0,https://www.fotmob.com/en-GB/matches/tottenham-hotspur-vs-fulham/2tici0#4506357
+29,2024-03-16,Leicester City,0,Manchester United,3,https://www.fotmob.com/en-GB/matches/leicester-city-vs-manchester-united/2tf58q#4506359
+29,2024-04-16,Newcastle United,5,Crystal Palace,0,https://www.fotmob.com/en-GB/matches/crystal-palace-vs-newcastle-united/3c4hty#4506361
+30,2024-04-01,Arsenal,2,Fulham,1,https://www.fotmob.com/en-GB/matches/arsenal-vs-fulham/37l643#4506364
+30,2024-04-01,Wolverhampton Wanderers,1,West Ham United,0,https://www.fotmob.com/en-GB/matches/wolverhampton-wanderers-vs-west-ham-united/2gnhk2#4506367
+30,2024-04-01,Nottingham Forest,1,Manchester United,0,https://www.fotmob.com/en-GB/matches/nottingham-forest-vs-manchester-united/3gnwkc#4506366
+30,2024-04-02,AFC Bournemouth,1,Ipswich Town,2,https://www.fotmob.com/en-GB/matches/afc-bournemouth-vs-ipswich-town/2us05c#4506363
+30,2024-04-02,Brighton & Hove Albion,0,Aston Villa,3,https://www.fotmob.com/en-GB/matches/brighton-hove-albion-vs-aston-villa/3gku1s#4506365
+30,2024-04-02,Manchester City,2,Leicester City,0,https://www.fotmob.com/en-GB/matches/leicester-city-vs-manchester-city/2akcmb#4506369
+30,2024-04-02,Newcastle United,2,Brentford,1,https://www.fotmob.com/en-GB/matches/brentford-vs-newcastle-united/3dgf4m#4506370
+30,2024-04-02,Southampton,1,Crystal Palace,1,https://www.fotmob.com/en-GB/matches/southampton-vs-crystal-palace/2rm738#4506371
+30,2024-04-02,Liverpool,1,Everton,0,https://www.fotmob.com/en-GB/matches/liverpool-vs-everton/2hagld#4506372
+30,2024-04-03,Chelsea,1,Tottenham Hotspur,0,https://www.fotmob.com/en-GB/matches/chelsea-vs-tottenham-hotspur/2eggkj#4506368
+31,2024-04-05,Everton,1,Arsenal,1,https://www.fotmob.com/en-GB/matches/everton-vs-arsenal/2ttfpg#4506376
+31,2024-04-05,Crystal Palace,2,Brighton & Hove Albion,1,https://www.fotmob.com/en-GB/matches/crystal-palace-vs-brighton-hove-albion/3bfzlv#4506375
+31,2024-04-05,Ipswich Town,1,Wolverhampton Wanderers,2,https://www.fotmob.com/en-GB/matches/wolverhampton-wanderers-vs-ipswich-town/2txss2#4506378
+31,2024-04-05,West Ham United,2,AFC Bournemouth,2,https://www.fotmob.com/en-GB/matches/west-ham-united-vs-afc-bournemouth/2hfnrc#4506382
+31,2024-04-05,Aston Villa,2,Nottingham Forest,1,https://www.fotmob.com/en-GB/matches/nottingham-forest-vs-aston-villa/3gke9k#4506373
+31,2024-04-06,Brentford,0,Chelsea,0,https://www.fotmob.com/en-GB/matches/chelsea-vs-brentford/2spihp#4506374
+31,2024-04-06,Fulham,3,Liverpool,2,https://www.fotmob.com/en-GB/matches/liverpool-vs-fulham/2u7pyg#4506377
+31,2024-04-06,Tottenham Hotspur,3,Southampton,1,https://www.fotmob.com/en-GB/matches/southampton-vs-tottenham-hotspur/2ekh9c#4506381
+31,2024-04-06,Manchester United,0,Manchester City,0,https://www.fotmob.com/en-GB/matches/manchester-city-vs-manchester-united/2wabz2#4506380
+31,2024-04-07,Leicester City,0,Newcastle United,3,https://www.fotmob.com/en-GB/matches/leicester-city-vs-newcastle-united/2tfjhg#4506379
+32,2024-04-12,Manchester City,5,Crystal Palace,2,https://www.fotmob.com/en-GB/matches/manchester-city-vs-crystal-palace/2ri9zd#4506388
+32,2024-04-12,Brighton & Hove Albion,2,Leicester City,2,https://www.fotmob.com/en-GB/matches/leicester-city-vs-brighton-hove-albion/2st0wm#4506385
+32,2024-04-12,Nottingham Forest,0,Everton,1,https://www.fotmob.com/en-GB/matches/everton-vs-nottingham-forest/2y0rvk#4506390
+32,2024-04-12,Southampton,0,Aston Villa,3,https://www.fotmob.com/en-GB/matches/southampton-vs-aston-villa/2wb4v7#4506391
+32,2024-04-12,Arsenal,1,Brentford,1,https://www.fotmob.com/en-GB/matches/arsenal-vs-brentford/389pak#4506384
+32,2024-04-13,Chelsea,2,Ipswich Town,2,https://www.fotmob.com/en-GB/matches/chelsea-vs-ipswich-town/2sbq85#4506386
+32,2024-04-13,Liverpool,2,West Ham United,1,https://www.fotmob.com/en-GB/matches/liverpool-vs-west-ham-united/2h59kq#4506387
+32,2024-04-13,Wolverhampton Wanderers,4,Tottenham Hotspur,2,https://www.fotmob.com/en-GB/matches/tottenham-hotspur-vs-wolverhampton-wanderers/2fydv8#4506392
+32,2024-04-13,Newcastle United,4,Manchester United,1,https://www.fotmob.com/en-GB/matches/manchester-united-vs-newcastle-united/3hddo2#4506389
+32,2024-04-14,AFC Bournemouth,1,Fulham,0,https://www.fotmob.com/en-GB/matches/afc-bournemouth-vs-fulham/2uiul6#4506383
+33,2024-04-19,Brentford,4,Brighton & Hove Albion,2,https://www.fotmob.com/en-GB/matches/brentford-vs-brighton-hove-albion/3crs0s#4506544
+33,2024-04-19,Crystal Palace,0,AFC Bournemouth,0,https://www.fotmob.com/en-GB/matches/afc-bournemouth-vs-crystal-palace/2txspy#4506545
+33,2024-04-19,Everton,0,Manchester City,2,https://www.fotmob.com/en-GB/matches/manchester-city-vs-everton/2fauom#4506546
+33,2024-04-19,West Ham United,1,Southampton,1,https://www.fotmob.com/en-GB/matches/southampton-vs-west-ham-united/2f9dtq#4506552
+33,2024-04-19,Aston Villa,4,Newcastle United,1,https://www.fotmob.com/en-GB/matches/aston-villa-vs-newcastle-united/3h9v0m#4506543
+33,2024-04-20,Fulham,1,Chelsea,2,https://www.fotmob.com/en-GB/matches/chelsea-vs-fulham/2s2omg#4506547
+33,2024-04-20,Ipswich Town,0,Arsenal,4,https://www.fotmob.com/en-GB/matches/arsenal-vs-ipswich-town/37uw12#4506548
+33,2024-04-20,Manchester United,0,Wolverhampton Wanderers,1,https://www.fotmob.com/en-GB/matches/wolverhampton-wanderers-vs-manchester-united/2xx4sz#4506550
+33,2024-04-20,Leicester City,0,Liverpool,1,https://www.fotmob.com/en-GB/matches/leicester-city-vs-liverpool/2ci06a#4506549
+33,2024-04-21,Tottenham Hotspur,1,Nottingham Forest,2,https://www.fotmob.com/en-GB/matches/tottenham-hotspur-vs-nottingham-forest/2x3odl#4506551
+34,2024-04-22,Manchester City,2,Aston Villa,1,https://www.fotmob.com/en-GB/matches/manchester-city-vs-aston-villa/2w74gq#4506558
+34,2024-04-23,Arsenal,2,Crystal Palace,2,https://www.fotmob.com/en-GB/matches/arsenal-vs-crystal-palace/36ytc8#4506554
+34,2024-04-26,Chelsea,1,Everton,0,https://www.fotmob.com/en-GB/matches/chelsea-vs-everton/2fahgy#4506556
+34,2024-04-26,Brighton & Hove Albion,3,West Ham United,2,https://www.fotmob.com/en-GB/matches/west-ham-united-vs-brighton-hove-albion/2xvimt#4506555
+34,2024-04-26,Newcastle United,3,Ipswich Town,0,https://www.fotmob.com/en-GB/matches/ipswich-town-vs-newcastle-united/3d1a38#4506559
+34,2024-04-26,Southampton,1,Fulham,2,https://www.fotmob.com/en-GB/matches/southampton-vs-fulham/2s70ac#4506561
+34,2024-04-26,Wolverhampton Wanderers,3,Leicester City,0,https://www.fotmob.com/en-GB/matches/leicester-city-vs-wolverhampton-wanderers/2c0p1m#4506562
+34,2024-04-27,AFC Bournemouth,1,Manchester United,1,https://www.fotmob.com/en-GB/matches/afc-bournemouth-vs-manchester-united/2yrx85#4506553
+34,2024-04-27,Liverpool,5,Tottenham Hotspur,1,https://www.fotmob.com/en-GB/matches/tottenham-hotspur-vs-liverpool/2gg3ek#4506557
+34,2024-05-01,Nottingham Forest,0,Brentford,2,https://www.fotmob.com/en-GB/matches/brentford-vs-nottingham-forest/3crchb#4506560
+35,2024-05-02,Manchester City,1,Wolverhampton Wanderers,0,https://www.fotmob.com/en-GB/matches/manchester-city-vs-wolverhampton-wanderers/2emo8d#4506570
+35,2024-05-03,Aston Villa,1,Fulham,0,https://www.fotmob.com/en-GB/matches/fulham-vs-aston-villa/3cnglp#4506564
+35,2024-05-03,Everton,2,Ipswich Town,2,https://www.fotmob.com/en-GB/matches/everton-vs-ipswich-town/2uo0th#4506568
+35,2024-05-03,Leicester City,2,Southampton,0,https://www.fotmob.com/en-GB/matches/leicester-city-vs-southampton/2anx5y#4506569
+35,2024-05-03,Arsenal,1,AFC Bournemouth,2,https://www.fotmob.com/en-GB/matches/afc-bournemouth-vs-arsenal/2txefx#4506563
+35,2024-05-04,Brentford,4,Manchester United,3,https://www.fotmob.com/en-GB/matches/brentford-vs-manchester-united/3dfzjk#4506565
+35,2024-05-04,Brighton & Hove Albion,1,Newcastle United,1,https://www.fotmob.com/en-GB/matches/brighton-hove-albion-vs-newcastle-united/3gos5a#4506572
+35,2024-05-04,West Ham United,1,Tottenham Hotspur,1,https://www.fotmob.com/en-GB/matches/tottenham-hotspur-vs-west-ham-united/2ghkm2#4506571
+35,2024-05-04,Chelsea,3,Liverpool,1,https://www.fotmob.com/en-GB/matches/chelsea-vs-liverpool/2f3vr7#4506566
+35,2024-05-05,Crystal Palace,1,Nottingham Forest,1,https://www.fotmob.com/en-GB/matches/crystal-palace-vs-nottingham-forest/3bfk5h#4506567
+36,2024-05-10,Fulham,1,Everton,3,https://www.fotmob.com/en-GB/matches/everton-vs-fulham/2uevfp#4506574
+36,2024-05-10,Ipswich Town,0,Brentford,1,https://www.fotmob.com/en-GB/matches/ipswich-town-vs-brentford/396dqp#4506575
+36,2024-05-10,Southampton,0,Manchester City,0,https://www.fotmob.com/en-GB/matches/manchester-city-vs-southampton/2d9569#4506580
+36,2024-05-10,Wolverhampton Wanderers,0,Brighton & Hove Albion,2,https://www.fotmob.com/en-GB/matches/wolverhampton-wanderers-vs-brighton-hove-albion/2xaiyv#4506582
+36,2024-05-10,AFC Bournemouth,0,Aston Villa,1,https://www.fotmob.com/en-GB/matches/afc-bournemouth-vs-aston-villa/2yooch#4506573
+36,2024-05-11,Newcastle United,2,Chelsea,0,https://www.fotmob.com/en-GB/matches/chelsea-vs-newcastle-united/2wabz1#4506578
+36,2024-05-11,Manchester United,0,West Ham United,2,https://www.fotmob.com/en-GB/matches/west-ham-united-vs-manchester-united/2yi6pt#4506577
+36,2024-05-11,Nottingham Forest,2,Leicester City,2,https://www.fotmob.com/en-GB/matches/leicester-city-vs-nottingham-forest/2ssmph#4506579
+36,2024-05-11,Tottenham Hotspur,0,Crystal Palace,2,https://www.fotmob.com/en-GB/matches/tottenham-hotspur-vs-crystal-palace/2sxee8#4506581
+36,2024-05-11,Liverpool,2,Arsenal,2,https://www.fotmob.com/en-GB/matches/liverpool-vs-arsenal/2tmaz7#4506576
+37,2024-05-16,Aston Villa,2,Tottenham Hotspur,0,https://www.fotmob.com/en-GB/matches/tottenham-hotspur-vs-aston-villa/2xnfpj#4506584
+37,2024-05-16,Chelsea,1,Manchester United,0,https://www.fotmob.com/en-GB/matches/chelsea-vs-manchester-united/2w9xj5#4506587
+37,2024-05-18,Everton,2,Southampton,0,https://www.fotmob.com/en-GB/matches/southampton-vs-everton/2feiut#4506589
+37,2024-05-18,West Ham United,1,Nottingham Forest,2,https://www.fotmob.com/en-GB/matches/west-ham-united-vs-nottingham-forest/2xv42z#4506592
+37,2024-05-18,Brentford,2,Fulham,3,https://www.fotmob.com/en-GB/matches/fulham-vs-brentford/38wlut#4506585
+37,2024-05-18,Leicester City,2,Ipswich Town,0,https://www.fotmob.com/en-GB/matches/leicester-city-vs-ipswich-town/2pixek#4506590
+37,2024-05-18,Arsenal,1,Newcastle United,0,https://www.fotmob.com/en-GB/matches/arsenal-vs-newcastle-united/3c42by#4506583
+37,2024-05-19,Brighton & Hove Albion,3,Liverpool,2,https://www.fotmob.com/en-GB/matches/liverpool-vs-brighton-hove-albion/2xtwfj#4506586
+37,2024-05-20,Crystal Palace,4,Wolverhampton Wanderers,2,https://www.fotmob.com/en-GB/matches/wolverhampton-wanderers-vs-crystal-palace/2t3pt4#4506588
+37,2024-05-20,Manchester City,3,AFC Bournemouth,1,https://www.fotmob.com/en-GB/matches/manchester-city-vs-afc-bournemouth/2feiv3#4506591
+38,2024-05-25,AFC Bournemouth,2,Leicester City,0,https://www.fotmob.com/en-GB/matches/leicester-city-vs-afc-bournemouth/2cs4hk#4506593
+38,2024-05-25,Fulham,0,Manchester City,2,https://www.fotmob.com/en-GB/matches/manchester-city-vs-fulham/2s32rr#4506594
+38,2024-05-25,Ipswich Town,1,West Ham United,3,https://www.fotmob.com/en-GB/matches/west-ham-united-vs-ipswich-town/2uigac#4506595
+38,2024-05-25,Liverpool,1,Crystal Palace,1,https://www.fotmob.com/en-GB/matches/liverpool-vs-crystal-palace/2tmp8g#4506596
+38,2024-05-25,Manchester United,2,Aston Villa,0,https://www.fotmob.com/en-GB/matches/aston-villa-vs-manchester-united/3h9f6s#4506597
+38,2024-05-25,Newcastle United,0,Everton,1,https://www.fotmob.com/en-GB/matches/everton-vs-newcastle-united/2yo9qd#4506598
+38,2024-05-25,Nottingham Forest,0,Chelsea,1,https://www.fotmob.com/en-GB/matches/chelsea-vs-nottingham-forest/2vn3ne#4506599
+38,2024-05-25,Southampton,1,Arsenal,2,https://www.fotmob.com/en-GB/matches/southampton-vs-arsenal/2rlsz3#4506600
+38,2024-05-25,Tottenham Hotspur,1,Brighton & Hove Albion,4,https://www.fotmob.com/en-GB/matches/tottenham-hotspur-vs-brighton-hove-albion/2x42vj#4506601
+38,2024-05-25,Wolverhampton Wanderers,1,Brentford,1,https://www.fotmob.com/en-GB/matches/wolverhampton-wanderers-vs-brentford/2ubp0j#4506602
