@@ -1,4 +1,4 @@
-round,match_date,home_team,away_team,match_url,player_name,team_name,minute,xg,xgot,result
+round,match_date,home_team,away_team,match_url,player_name,Team,minute,xg,xgot,result
 1,2024-08-16,Manchester United,Fulham,https://www.fotmob.com/en-GB/matches/fulham-vs-manchester-united/3cqww9#4506263:tab=stats,Joshua Zirkzee,Man United,87,0.07,0.86,Goal
 1,2024-08-16,Manchester United,Fulham,https://www.fotmob.com/en-GB/matches/fulham-vs-manchester-united/3cqww9#4506263:tab=stats,Calvin Bassey,Fulham,91,0.05,,Miss
 1,2024-08-16,Manchester United,Fulham,https://www.fotmob.com/en-GB/matches/fulham-vs-manchester-united/3cqww9#4506263:tab=stats,Alejandro Garnacho,Man United,94,0.67,,Miss
