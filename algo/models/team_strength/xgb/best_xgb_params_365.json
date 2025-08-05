@@ -1,0 +1,16 @@
+{
+  "best_params": {
+    "max_depth": 10,
+    "eta": 0.017547050693121728,
+    "subsample": 0.6801844359622221,
+    "colsample_bytree": 0.5339353330352706,
+    "colsample_bylevel": 0.7488248985951886,
+    "min_child_weight": 15,
+    "gamma": 1.5127841286229993,
+    "alpha": 2.1628536493115957,
+    "lambda": 7.0836055178883015,
+    "max_leaves": 118
+  },
+  "n_estimators": 391,
+  "best_rmse": 1.1693906957464844
+}

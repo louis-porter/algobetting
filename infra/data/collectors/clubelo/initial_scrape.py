@@ -89,7 +89,7 @@ class ClubEloScraper:
         # For now, just ensure the database file exists
         conn.close()
     
-    def create_table_from_dataframe(self, df, table_name='clubelo_ratings'):
+    def create_table_from_dataframe(self, df, table_name='clubelo_ratings_raw'):
         """Create table based on DataFrame structure"""
         conn = sqlite3.connect(self.db_path)
         
@@ -104,7 +104,7 @@ class ClubEloScraper:
         finally:
             conn.close()
     
-    def insert_dataframe_to_db(self, df, table_name='clubelo_ratings'):
+    def insert_dataframe_to_db(self, df, table_name='clubelo_ratings_raw'):
         """Insert DataFrame data into existing table"""
         conn = sqlite3.connect(self.db_path)
         
@@ -117,7 +117,7 @@ class ClubEloScraper:
         finally:
             conn.close()
     
-    def date_already_exists(self, date_str, table_name='clubelo_ratings'):
+    def date_already_exists(self, date_str, table_name='clubelo_ratings_raw'):
         """Check if data for a specific date already exists"""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
@@ -202,7 +202,7 @@ class ClubEloScraper:
         if table_created:
             self.show_summary()
     
-    def show_summary(self, table_name='clubelo_ratings'):
+    def show_summary(self, table_name='clubelo_ratings_raw'):
         """Show summary of data in the database"""
         conn = sqlite3.connect(self.db_path)
         
