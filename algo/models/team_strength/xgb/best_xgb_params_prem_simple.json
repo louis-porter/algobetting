@@ -1,16 +1,30 @@
 {
   "best_params": {
     "max_depth": 6,
-    "eta": 0.07383453468030124,
-    "subsample": 0.7599865857318061,
-    "colsample_bytree": 0.6326567237903012,
-    "colsample_bylevel": 0.9832636358011576,
-    "min_child_weight": 1,
-    "gamma": 4.6067178785587135,
-    "alpha": 4.441216511551168,
-    "lambda": 9.09701216917619,
-    "max_leaves": 65
+    "min_child_weight": 10,
+    "max_leaves": 18,
+    "eta": 0.04115450242373961,
+    "subsample": 0.8944540488344748,
+    "colsample_bytree": 0.9357581507157812,
+    "colsample_bylevel": 0.809692833685253,
+    "colsample_bynode": 0.5585807029112413,
+    "gamma": 2.7914238669056664,
+    "alpha": 9.890881003905257,
+    "lambda": 15.12079744332405,
+    "max_delta_step": 0.46514610793830397
   },
-  "n_estimators": 199,
-  "best_rmse": 1.1525820537561762
+  "n_estimators": 373,
+  "optimization_results": {
+    "best_neg_log_likelihood": 984.2088000454779,
+    "log_likelihood": -986.8818832681031,
+    "mean_log_likelihood": -1.4907581318249292,
+    "poisson_deviance": 720.9291573373764,
+    "rmse": 1.1817774722601657,
+    "mae": 0.9268327089775005
+  },
+  "study_stats": {
+    "n_trials": 250,
+    "n_complete_trials": 250,
+    "n_pruned_trials": 0
+  }
 }
