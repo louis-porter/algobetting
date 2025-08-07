@@ -1,369 +1,330 @@
-import numpy as np
-import pandas as pd
-from sklearn.preprocessing import StandardScaler, LabelEncoder
-from scipy.stats import poisson
 import torch
 import torch.nn as nn
-import torch.optim as optim
-from torch.utils.data import DataLoader, TensorDataset
-import sqlite3
+import torch.nn.functional as F
+import pandas as pd
+import numpy as np
+from torch.utils.data import Dataset, DataLoader
 
-# ================================
-# STEP 1: LOAD AND AGGREGATE TEAM DATA
-# ================================
-
-def load_and_aggregate_team_data():
-    """Load match data and calculate team strength metrics"""
-    conn = sqlite3.connect(r'C:\Users\Owner\dev\algobetting\infra\data\db\algobetting.db')
-
-    # Get all matches for both home and away
-    df = pd.read_sql_query("""
-        SELECT 
-            team,
-            opp_team,
-            summary_goals as goals_for,
-            opp_summary_goals as goals_against,
-            summary_xg as xg_for,
-            opp_summary_xg as xg_against,
-            is_home,
-            match_date as date
-        FROM fbref_match_all_columns
-        WHERE division = 'Premier League'
-            AND season = '2024-2025'
-            AND summary_xg IS NOT NULL
-            AND opp_summary_xg IS NOT NULL
-
-    """, conn)
-    conn.close()
-    
-    print(f"📊 Loaded {len(df)} individual match records")
-    
-    # Calculate team performance metrics over time
-    team_stats = []
-    
-    for team in df['team'].unique():
-        team_matches = df[df['team'] == team].sort_values('date')
+class FootballDataset(Dataset):
+    def __init__(self, matches_df):
+        """
+        Expected DataFrame columns:
+        - home_team_id, away_team_id (integers 0 to n_teams-1)
+        - is_home (1 for home advantage, 0 otherwise)
+        - goals_home, goals_away (target variables)
+        - Optional: xG_home, xG_away, shots_home, shots_away, etc. (for features)
+        """
+        self.home_teams = torch.tensor(matches_df['home_team_id'].values, dtype=torch.long)
+        self.away_teams = torch.tensor(matches_df['away_team_id'].values, dtype=torch.long)
+        self.is_home = torch.tensor(matches_df['is_home'].values, dtype=torch.float32)
+        self.goals_home = torch.tensor(matches_df['goals_home'].values, dtype=torch.float32)
+        self.goals_away = torch.tensor(matches_df['goals_away'].values, dtype=torch.float32)
         
-        if len(team_matches) < 5:  # Skip teams with too few matches
-            continue
-            
-        # Calculate rolling averages (last 10 games)
-        window = min(10, len(team_matches))
-        
-        recent_stats = {
-            'team': team,
-            'matches_played': len(team_matches),
-            'avg_goals_for': team_matches['goals_for'].rolling(window).mean().iloc[-1],
-            'avg_goals_against': team_matches['goals_against'].rolling(window).mean().iloc[-1],
-            'avg_xg_for': team_matches['xg_for'].rolling(window).mean().iloc[-1],
-            'avg_xg_against': team_matches['xg_against'].rolling(window).mean().iloc[-1],
-            'home_games': len(team_matches[team_matches['is_home'] == 1]),
-            'away_games': len(team_matches[team_matches['is_home'] == 0]),
+        # Optional: include observable features as additional context
+        feature_cols = ['xG_home', 'xG_away', 'shots_home', 'shots_away']
+        if all(col in matches_df.columns for col in feature_cols):
+            self.features = torch.tensor(matches_df[feature_cols].values, dtype=torch.float32)
+        else:
+            self.features = None
+    
+    def __len__(self):
+        return len(self.home_teams)
+    
+    def __getitem__(self, idx):
+        item = {
+            'home_team': self.home_teams[idx],
+            'away_team': self.away_teams[idx], 
+            'is_home': self.is_home[idx],
+            'goals_home': self.goals_home[idx],
+            'goals_away': self.goals_away[idx]
         }
-        
-        team_stats.append(recent_stats)
-    
-    team_df = pd.DataFrame(team_stats)
-    print(f"✅ Calculated stats for {len(team_df)} teams")
-    
-    return team_df, df
+        if self.features is not None:
+            item['features'] = self.features[idx]
+        return item
 
-# ================================
-# STEP 2: NEURAL NETWORK FOR TEAM STRENGTHS
-# ================================
-
-class TeamStrengthModel(nn.Module):
-    """
-    This network takes team performance metrics and outputs:
-    - Attack strength 
-    - Defense strength
-    That work well in Dixon-Coles style predictions
-    """
-    
-    def __init__(self, n_features):
+class TalentBottleneckModel(nn.Module):
+    def __init__(self, n_teams, feature_dim=0, hidden_dim=128):
         super().__init__()
+        self.n_teams = n_teams
         
-        # Shared feature processing
-        self.feature_encoder = nn.Sequential(
-            nn.Linear(n_features, 32),
+        # Input: team indices + home advantage + optional features
+        input_dim = 1 + feature_dim  # home advantage + features
+        
+        # Hidden layers to process context
+        self.hidden = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
             nn.ReLU(),
-            nn.Dropout(0.2),
-            nn.Linear(32, 16),
+            nn.Dropout(0.3),
+            nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
+            nn.Dropout(0.3),
         )
         
-        # Separate heads for attack and defense
-        self.attack_head = nn.Sequential(
-            nn.Linear(16, 8),
-            nn.ReLU(),
-            nn.Linear(8, 1)
-        )
+        # Talent parameter layers (the bottleneck!)
+        # Each team gets attack and defense parameters
+        self.attack_embedding = nn.Embedding(n_teams, 1)
+        self.defense_embedding = nn.Embedding(n_teams, 1)
         
-        self.defense_head = nn.Sequential(
-            nn.Linear(16, 8), 
-            nn.ReLU(),
-            nn.Linear(8, 1)
-        )
+        # Global parameters
+        self.home_advantage = nn.Parameter(torch.tensor(0.0))
         
-        # Home advantage parameter
-        self.home_advantage = nn.Parameter(torch.tensor(0.3))
-    
-    def get_team_strengths(self, team_features):
-        """Get attack and defense strengths for teams"""
-        encoded = self.feature_encoder(team_features)
-        
-        # Use softplus to ensure positive values
-        attack = torch.nn.functional.softplus(self.attack_head(encoded))
-        defense = torch.nn.functional.softplus(self.defense_head(encoded))
-        
-        return attack.squeeze(), defense.squeeze()
-    
-    def forward(self, home_features, away_features):
-        """Predict match outcome using team strengths"""
-        home_attack, home_defense = self.get_team_strengths(home_features)
-        away_attack, away_defense = self.get_team_strengths(away_features)
-        
-        # Dixon-Coles style calculation
-        home_lambda = home_attack * away_defense * torch.exp(self.home_advantage)
-        away_lambda = away_attack * home_defense
-        
-        return home_lambda, away_lambda
-
-# ================================
-# STEP 3: PREPARE TRAINING DATA
-# ================================
-
-def prepare_training_data(team_df, match_df):
-    """Create training pairs from team stats and match results"""
-    
-    # Create team lookup
-    team_to_idx = {team: idx for idx, team in enumerate(team_df['team'])}
-    
-    # Features for strength calculation
-    feature_cols = ['avg_goals_for', 'avg_goals_against', 'avg_xg_for', 'avg_xg_against']
-    team_features = team_df[feature_cols].values
-    
-    # Scale features
-    scaler = StandardScaler()
-    team_features_scaled = scaler.fit_transform(team_features)
-    
-    # Create training examples from recent matches
-    training_data = []
-    
-    for _, match in match_df.iterrows():
-        home_team = match['team'] if match['is_home'] == 1 else match['opp_team']
-        away_team = match['opp_team'] if match['is_home'] == 1 else match['team']
-        
-        if home_team in team_to_idx and away_team in team_to_idx:
-            home_idx = team_to_idx[home_team]
-            away_idx = team_to_idx[away_team]
+        # Optional: context-dependent adjustments to talent
+        if feature_dim > 0:
+            self.talent_adjustment = nn.Linear(hidden_dim, 2)  # adjust attack/defense
+        else:
+            self.talent_adjustment = None
             
-            home_goals = match['goals_for'] if match['is_home'] == 1 else match['goals_against']
-            away_goals = match['goals_against'] if match['is_home'] == 1 else match['goals_for']
+        # Initialize embeddings
+        nn.init.normal_(self.attack_embedding.weight, 0, 0.1)
+        nn.init.normal_(self.defense_embedding.weight, 0, 0.1)
+    
+    def forward(self, home_team, away_team, is_home, features=None):
+        batch_size = home_team.size(0)
+        
+        # Base talent parameters
+        home_attack = self.attack_embedding(home_team).squeeze(-1)  # [batch_size]
+        home_defense = self.defense_embedding(home_team).squeeze(-1)
+        away_attack = self.attack_embedding(away_team).squeeze(-1)  
+        away_defense = self.defense_embedding(away_team).squeeze(-1)
+        
+        # Process context features
+        context_input = is_home.unsqueeze(-1)  # [batch_size, 1]
+        if features is not None:
+            context_input = torch.cat([context_input, features], dim=-1)
             
-            training_data.append({
-                'home_idx': home_idx,
-                'away_idx': away_idx, 
-                'home_goals': home_goals,
-                'away_goals': away_goals,
-                'home_team': home_team,
-                'away_team': away_team
-            })
-    
-    train_df = pd.DataFrame(training_data)
-    
-    print(f"🎯 Created {len(train_df)} training examples")
-    
-    return train_df, team_features_scaled, scaler, team_to_idx
+        hidden_output = self.hidden(context_input)
+        
+        # Optional: adjust talents based on context
+        if self.talent_adjustment is not None:
+            adjustments = self.talent_adjustment(hidden_output)  # [batch_size, 2]
+            home_attack_adj = adjustments[:, 0]
+            home_defense_adj = adjustments[:, 1]
+        else:
+            home_attack_adj = 0
+            home_defense_adj = 0
+        
+        # Final talent parameters (the interpretable bottleneck)
+        final_home_attack = home_attack + home_attack_adj
+        final_home_defense = home_defense + home_defense_adj
+        
+        # Calculate Poisson rates using classic attack - defense formula
+        lambda_home = torch.exp(final_home_attack - away_defense + self.home_advantage * is_home)
+        lambda_away = torch.exp(away_attack - final_home_defense)
+        
+        return {
+            'lambda_home': lambda_home,
+            'lambda_away': lambda_away,
+            'talents': {
+                'home_attack': final_home_attack,
+                'home_defense': final_home_defense, 
+                'away_attack': away_attack,
+                'away_defense': away_defense,
+                'home_advantage': self.home_advantage
+            }
+        }
 
-# ================================
-# STEP 4: LOSS FUNCTION
-# ================================
-
-def poisson_loss(predicted_lambda, actual_goals):
-    """Poisson negative log-likelihood loss"""
+def poisson_loss(pred_lambda, actual_goals):
+    """Negative log-likelihood for Poisson distribution"""
     # Clamp lambda to avoid numerical issues
-    predicted_lambda = torch.clamp(predicted_lambda, 0.01, 10.0)
-    return -torch.distributions.Poisson(predicted_lambda).log_prob(actual_goals).mean()
+    pred_lambda = torch.clamp(pred_lambda, min=1e-8, max=10.0)
+    return -torch.sum(actual_goals * torch.log(pred_lambda) - pred_lambda - torch.lgamma(actual_goals + 1))
 
-# ================================
-# STEP 5: TRAINING
-# ================================
+def train_model(model, train_loader, val_loader, epochs=1000, lr=0.001):
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=1e-4)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=10)
+    
+    for epoch in range(epochs):
+        # Training
+        model.train()
+        train_loss = 0
+        for batch in train_loader:
+            optimizer.zero_grad()
+            
+            # Forward pass
+            output = model(batch['home_team'], batch['away_team'], batch['is_home'], 
+                          batch.get('features'))
+            
+            # Poisson loss for both home and away goals
+            loss_home = poisson_loss(output['lambda_home'], batch['goals_home'])
+            loss_away = poisson_loss(output['lambda_away'], batch['goals_away'])
+            loss = loss_home + loss_away
+            
+            loss.backward()
+            optimizer.step()
+            train_loss += loss.item()
+        
+        # Validation
+        model.eval()
+        val_loss = 0
+        with torch.no_grad():
+            for batch in val_loader:
+                output = model(batch['home_team'], batch['away_team'], batch['is_home'],
+                              batch.get('features'))
+                loss_home = poisson_loss(output['lambda_home'], batch['goals_home'])
+                loss_away = poisson_loss(output['lambda_away'], batch['goals_away'])
+                val_loss += (loss_home + loss_away).item()
+        
+        avg_train_loss = train_loss / len(train_loader)
+        avg_val_loss = val_loss / len(val_loader)
+        scheduler.step(avg_val_loss)
+        
+        if epoch % 10 == 0:
+            print(f'Epoch {epoch}: Train Loss = {avg_train_loss:.4f}, Val Loss = {avg_val_loss:.4f}')
 
-def train_team_strength_model():
-    """Train the model to learn team strengths"""
-    
-    print("📊 Loading and processing team data...")
-    team_df, match_df = load_and_aggregate_team_data()
-    
-    print("🔄 Preparing training data...")
-    train_df, team_features, scaler, team_to_idx = prepare_training_data(team_df, match_df)
-    
-    if len(train_df) < 10:
-        print("❌ Not enough training data!")
-        return None, None, None, None
-    
-    # Convert to tensors
-    team_features_tensor = torch.FloatTensor(team_features)
-    
-    # Training data
-    home_indices = torch.LongTensor(train_df['home_idx'].values)
-    away_indices = torch.LongTensor(train_df['away_idx'].values)
-    home_goals = torch.FloatTensor(train_df['home_goals'].values)
-    away_goals = torch.FloatTensor(train_df['away_goals'].values)
-    
-    # Create model
-    model = TeamStrengthModel(n_features=team_features.shape[1])
-    optimizer = optim.Adam(model.parameters(), lr=0.01)
-    
-    print(f"\n🧠 Training model on {len(train_df)} matches...")
-    
-    # Training loop
-    for epoch in range(500):
-        optimizer.zero_grad()
-        
-        # Get team features for this batch
-        home_features = team_features_tensor[home_indices]
-        away_features = team_features_tensor[away_indices]
-        
-        # Predict match outcomes
-        pred_home_goals, pred_away_goals = model(home_features, away_features)
-        
-        # Calculate loss
-        loss = poisson_loss(pred_home_goals, home_goals) + poisson_loss(pred_away_goals, away_goals)
-        
-        # Update model
-        loss.backward()
-        optimizer.step()
-        
-        if epoch % 100 == 0:
-            print(f"Epoch {epoch}: Loss = {loss.item():.4f}")
-    
-    print(f"\n✅ Training complete! Final loss: {loss.item():.4f}")
-    print(f"🏠 Learned home advantage: {torch.exp(model.home_advantage).item():.3f}")
-    
-    return model, team_df, scaler, team_to_idx
-
-# ================================
-# STEP 6: EXTRACT AND DISPLAY TEAM STRENGTHS
-# ================================
-
-def show_team_strengths(model, team_df, scaler):
-    """Display the learned team strengths"""
-    
-    if model is None:
-        return
-        
+def extract_team_talents(model, n_teams):
+    """Extract the learned attack/defense parameters for analysis"""
     model.eval()
-    
-    # Get features
-    feature_cols = ['avg_goals_for', 'avg_goals_against', 'avg_xg_for', 'avg_xg_against']
-    team_features = scaler.transform(team_df[feature_cols].values)
-    team_features_tensor = torch.FloatTensor(team_features)
-    
-    # Get strengths
     with torch.no_grad():
-        attack_strengths, defense_strengths = model.get_team_strengths(team_features_tensor)
+        team_ids = torch.arange(n_teams)
+        attacks = model.attack_embedding(team_ids).squeeze().numpy()
+        defenses = model.defense_embedding(team_ids).squeeze().numpy()
+        home_adv = model.home_advantage.item()
+        
+    return {
+        'attacks': attacks,
+        'defenses': defenses, 
+        'home_advantage': home_adv
+    }
+
+# Example usage
+if __name__ == "__main__":
+    import sqlite3
+    
+    # Load real Premier League data
+    def load_real_data():
+        """Load match data from your database"""
+        conn = sqlite3.connect(r'C:\Users\Owner\dev\algobetting\infra\data\db\algobetting.db')
+
+        # Get all matches for both home and away
+        df = pd.read_sql_query("""
+            SELECT 
+                team,
+                opp_team,
+                summary_goals as goals_for,
+                opp_summary_goals as goals_against,
+                summary_xg as xg_for,
+                opp_summary_xg as xg_against,
+                summary_shots as shots_for,
+                opp_summary_shots as shots_against,
+                match_date as date
+            FROM fbref_match_all_columns
+            WHERE division = 'Premier League'
+                AND season = '2024-2025'
+                AND summary_xg IS NOT NULL
+                AND opp_summary_xg IS NOT NULL
+                AND is_home = 1
+
+        """, conn)
+        conn.close()
+        
+        # Create team ID mapping
+        all_teams = sorted(list(set(df['team'].unique()) | set(df['opp_team'].unique())))
+        team_to_id = {team: idx for idx, team in enumerate(all_teams)}
+        id_to_team = {idx: team for team, idx in team_to_id.items()}
+        
+        # Convert to required format
+        processed_data = pd.DataFrame({
+            'home_team_id': df['team'].map(team_to_id),
+            'away_team_id': df['opp_team'].map(team_to_id),
+            'is_home': 1,  # All records are home matches from the query
+            'goals_home': df['goals_for'],
+            'goals_away': df['goals_against'],
+            # Optional features
+            'xG_home': df['xg_for'],
+            'xG_away': df['xg_against'],
+            'shots_home': df['shots_for'],
+            'shots_away': df['shots_against'],
+            'date': df['date']
+        })
+        
+        # Remove any invalid matches
+        processed_data = processed_data.dropna()
+        processed_data = processed_data[processed_data['home_team_id'] != processed_data['away_team_id']]
+        
+        return processed_data, team_to_id, id_to_team
+    
+    # Load the real data
+    real_data, team_mapping, id_mapping = load_real_data()
+    n_teams = len(team_mapping)
+    
+    print(f"Loaded {len(real_data)} Premier League matches")
+    print(f"Number of teams: {n_teams}")
+    print(f"Teams: {list(team_mapping.keys())}")
+    print(f"Sample data:")
+    print(real_data.head())
+    
+    
+    # Split data chronologically (use early matches for training, later for validation)
+    real_data = real_data.sort_values('date')
+    train_size = int(0.8 * len(real_data))
+    train_data = real_data.iloc[:train_size]
+    val_data = real_data.iloc[train_size:]
+    
+    print(f"\nTraining on {len(train_data)} matches, validating on {len(val_data)} matches")
+    
+    # Create datasets (remove possession since it's not in your data)
+    train_dataset = FootballDataset(train_data)
+    val_dataset = FootballDataset(val_data)
+    
+    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False)
+    
+    # Initialize model
+    feature_dim = 4  # xG_home, xG_away, shots_home, shots_away
+    model = TalentBottleneckModel(n_teams=n_teams, feature_dim=feature_dim, hidden_dim=64)
+    
+    print("\nTraining model on Premier League data...")
+    train_model(model, train_loader, val_loader, epochs=1000, lr=0.001)
+    
+    # Extract learned talents and show team rankings
+    talents = extract_team_talents(model, n_teams)
     
     # Create results dataframe
-    results = team_df[['team']].copy()
-    results['attack_strength'] = attack_strengths.numpy()
-    results['defense_strength'] = defense_strengths.numpy()
+    results_df = pd.DataFrame({
+        'team': [id_mapping[i] for i in range(n_teams)],
+        'attack_talent': talents['attacks'],
+        'defense_talent': talents['defenses']
+    })
     
-    # Sort by attack strength
-    results_attack = results.sort_values('attack_strength', ascending=False)
-    results_defense = results.sort_values('defense_strength', ascending=False)
+    # Sort by attack talent
+    attack_ranking = results_df.sort_values('attack_talent', ascending=False)
+    defense_ranking = results_df.sort_values('defense_talent', ascending=True)  # Lower is better defense
     
-    print("\n⚔️ ATTACK STRENGTHS (Highest = Best Attack)")
-    print("=" * 50)
-    for i, (_, row) in enumerate(results_attack.head(20).iterrows()):
-        print(f"{i+1:2d}. {row['team']:15s} {row['attack_strength']:.3f}")
+    print(f"\nLearned Model Parameters:")
+    print(f"Home advantage: {talents['home_advantage']:.3f}")
     
-    print("\n🛡️ DEFENSE STRENGTHS (Highest = Best Defense)")
-    print("=" * 50) 
-    for i, (_, row) in enumerate(results_defense.head(20).iterrows()):
-        print(f"{i+1:2d}. {row['team']:15s} {row['defense_strength']:.3f}")
-    
-    return results
+    print(f"\nTop 5 Attack Teams:")
+    print(attack_ranking.head(20)[['team', 'attack_talent']])
 
-# ================================
-# STEP 7: PREDICT NEW MATCHES
-# ================================
-
-def predict_match_from_strengths(model, team_df, scaler, team_to_idx, home_team, away_team):
-    """Predict match using learned team strengths"""
     
-    if model is None or home_team not in team_to_idx or away_team not in team_to_idx:
-        print(f"❌ Team not found: {home_team} or {away_team}")
-        return
+    print(f"\nTop 5 Defense Teams (lowest defense values):")
+    print(defense_ranking.head(20)[['team', 'defense_talent']])
     
+    
+    # Show some sample predictions vs actual
     model.eval()
+    sample_matches = val_data.head(10)
+    print(f"\nSample Predictions vs Actual (validation set):")
+    print("Home Team vs Away Team | Pred Goals | Actual Goals")
+    print("-" * 55)
     
-    # Get team indices
-    home_idx = team_to_idx[home_team]
-    away_idx = team_to_idx[away_team]
-    
-    # Get features
-    feature_cols = ['avg_goals_for', 'avg_goals_against', 'avg_xg_for', 'avg_xg_against']
-    team_features = scaler.transform(team_df[feature_cols].values)
-    
-    home_features = torch.FloatTensor(team_features[home_idx:home_idx+1])
-    away_features = torch.FloatTensor(team_features[away_idx:away_idx+1])
-    
-    # Predict
     with torch.no_grad():
-        home_lambda, away_lambda = model(home_features, away_features)
-    
-    home_expected = home_lambda.item()
-    away_expected = away_lambda.item()
-    
-    print(f"\n⚽ {home_team} vs {away_team}")
-    print(f"🎯 Expected goals: {home_team} {home_expected:.2f} - {away_expected:.2f} {away_team}")
-    
-    # Win probabilities
-    home_win = sum(poisson.pmf(h, home_expected) * sum(poisson.pmf(a, away_expected) 
-                  for a in range(h)) for h in range(10))
-    draw = sum(poisson.pmf(g, home_expected) * poisson.pmf(g, away_expected) for g in range(10))
-    away_win = 1 - home_win - draw
-    
-    print(f"📊 Win probabilities:")
-    print(f"   🏠 {home_team}: {home_win:.1%}")
-    print(f"   🤝 Draw: {draw:.1%}")
-    print(f"   🛫 {away_team}: {away_win:.1%}")
-
-# ================================
-# STEP 8: MAIN EXECUTION
-# ================================
-
-if __name__ == "__main__":
-    print("🚀 Premier League Team Strength Analysis")
-    print("=" * 50)
-    
-    # Train the model
-    model, team_df, scaler, team_to_idx = train_team_strength_model()
-    
-    if model is not None:
-        # Show learned team strengths
-        strengths_df = show_team_strengths(model, team_df, scaler)
-        
-        # Example predictions
-        print("\n🔮 EXAMPLE PREDICTIONS")
-        print("=" * 50)
-        
-        teams = list(team_to_idx.keys())
-        if len(teams) >= 4:
-            predict_match_from_strengths(model, team_df, scaler, team_to_idx, 
-                                       teams[0], teams[1])
-            predict_match_from_strengths(model, team_df, scaler, team_to_idx, 
-                                       teams[2], teams[3])
-        
-        print(f"\n🎉 Success! Derived team strengths from match history")
-        print("\nWhat happened:")
-        print("1. ✅ Loaded historical match data and calculated team metrics")
-        print("2. ✅ Trained neural network to learn attack/defense strengths")
-        print("3. ✅ Network optimized strengths for Poisson goal prediction")
-        print("4. ✅ Extracted interpretable team strength rankings")
-        print("5. ✅ Can now predict any match using learned strengths")
-    
-    else:
-        print("❌ Training failed - check your data")
+        for _, match in sample_matches.iterrows():
+            home_team_name = id_mapping[match['home_team_id']]
+            away_team_name = id_mapping[match['away_team_id']]
+            
+            # Get prediction
+            output = model(
+                torch.tensor([match['home_team_id']], dtype=torch.long),
+                torch.tensor([match['away_team_id']], dtype=torch.long),
+                torch.tensor([match['is_home']], dtype=torch.float32),
+                torch.tensor([[match['xG_home'], match['xG_away'], 
+                             match['shots_home'], match['shots_away']]], dtype=torch.float32)
+            )
+            
+            pred_home = output['lambda_home'].item()
+            pred_away = output['lambda_away'].item()
+            actual_home = match['goals_home']
+            actual_away = match['goals_away']
+            
+            print(f"{home_team_name:<15} vs {away_team_name:<15} | {pred_home:.1f}-{pred_away:.1f} | {actual_home:.0f}-{actual_away:.0f}")
