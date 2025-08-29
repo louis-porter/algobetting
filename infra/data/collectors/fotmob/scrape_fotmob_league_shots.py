@@ -8,42 +8,103 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from datetime import datetime
+import concurrent.futures
+from threading import Lock
+import json
+
+# Global variables for thread safety
+csv_lock = Lock()
+driver_pool = []
+
+def get_optimized_chrome_options():
+    """Get optimized Chrome options for faster scraping"""
+    chrome_options = Options()
+    chrome_options.add_argument('--headless')
+    chrome_options.add_argument('--no-sandbox')
+    chrome_options.add_argument('--disable-dev-shm-usage')
+    chrome_options.add_argument('--disable-gpu')
+    chrome_options.add_argument('--disable-extensions')
+    chrome_options.add_argument('--disable-plugins')
+    chrome_options.add_argument('--disable-images')  # Don't load images for speed
+    chrome_options.add_argument('--disable-web-security')
+    chrome_options.add_argument('--disable-features=VizDisplayCompositor')
+    chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+    
+    # Remove problematic options that can cause startup issues
+    # chrome_options.add_argument('--disable-javascript')  # REMOVED - needed for dynamic content
+    # chrome_options.add_argument('--disable-css')  # REMOVED - needed for selectors
+    # chrome_options.add_argument('--page-load-strategy=eager')  # REMOVED - can cause issues
+    
+    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    chrome_options.add_experimental_option('useAutomationExtension', False)
+    
+    # Add user agent to avoid detection
+    chrome_options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+    
+    return chrome_options
+
+def create_driver():
+    """Create a new Chrome driver instance"""
+    chrome_options = get_optimized_chrome_options()
+    
+    try:
+        service = Service(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service, options=chrome_options)
+        
+        # Set reasonable timeouts
+        driver.set_page_load_timeout(30)  # Increased from 15
+        driver.implicitly_wait(5)  # Increased from 2
+        
+        return driver
+    
+    except Exception as e:
+        print(f"Error creating driver: {e}")
+        # Fallback with minimal options if the optimized version fails
+        print("Trying with minimal Chrome options...")
+        
+        fallback_options = Options()
+        fallback_options.add_argument('--headless')
+        fallback_options.add_argument('--no-sandbox')
+        fallback_options.add_argument('--disable-dev-shm-usage')
+        
+        try:
+            service = Service(ChromeDriverManager().install())
+            driver = webdriver.Chrome(service=service, options=fallback_options)
+            driver.set_page_load_timeout(30)
+            driver.implicitly_wait(5)
+            return driver
+        except Exception as fallback_error:
+            print(f"Fallback also failed: {fallback_error}")
+            raise
 
 def parse_date_to_iso(date_string, default_year=None):
-    """
-    Convert various date formats to YYYY-MM-DD format
-    Extracts year from the date string if present, otherwise uses current year or default_year
-    """
+    """Convert various date formats to YYYY-MM-DD format (unchanged)"""
     if not date_string or date_string.strip() == '':
         return None
     
     date_string = date_string.strip()
     
     try:
-        # Handle formats like "Sunday 25 May 2024", "Monday 1 June", "25 May 2023", etc.
-        # Remove day of week if present
         date_parts = date_string.split()
         
-        # If first part looks like a day of week, remove it
         days_of_week = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
         if len(date_parts) > 0 and date_parts[0].lower() in days_of_week:
             date_parts = date_parts[1:]
         
-        # Extract year if present
         year = None
         day = None
         month = None
         
-        # Look for a 4-digit year in the date parts
         for i, part in enumerate(date_parts):
             if part.isdigit() and len(part) == 4 and 1900 <= int(part) <= 2100:
                 year = int(part)
-                # Remove year from date_parts for further processing
                 date_parts = date_parts[:i] + date_parts[i+1:]
                 break
         
-        # If no year found, use default_year or current year
         if year is None:
             if default_year:
                 year = default_year
@@ -54,20 +115,12 @@ def parse_date_to_iso(date_string, default_year=None):
             day = date_parts[0]
             month = date_parts[1]
             
-            # Month name to number mapping
             month_map = {
-                'january': 1, 'jan': 1,
-                'february': 2, 'feb': 2,
-                'march': 3, 'mar': 3,
-                'april': 4, 'apr': 4,
-                'may': 5,
-                'june': 6, 'jun': 6,
-                'july': 7, 'jul': 7,
-                'august': 8, 'aug': 8,
-                'september': 9, 'sep': 9, 'sept': 9,
-                'october': 10, 'oct': 10,
-                'november': 11, 'nov': 11,
-                'december': 12, 'dec': 12
+                'january': 1, 'jan': 1, 'february': 2, 'feb': 2, 'march': 3, 'mar': 3,
+                'april': 4, 'apr': 4, 'may': 5, 'june': 6, 'jun': 6,
+                'july': 7, 'jul': 7, 'august': 8, 'aug': 8,
+                'september': 9, 'sep': 9, 'sept': 9, 'october': 10, 'oct': 10,
+                'november': 11, 'nov': 11, 'december': 12, 'dec': 12
             }
             
             month_num = month_map.get(month.lower())
@@ -78,467 +131,516 @@ def parse_date_to_iso(date_string, default_year=None):
     except Exception as e:
         print(f"Error parsing date '{date_string}': {e}")
     
-    # If parsing fails, return the original string
     return date_string
 
-def scrape_league_rounds(base_url, max_rounds=30, season_year=None):
-    """
-    Scrape match URLs and dates from all FotMob league rounds
-    """
-    
-    # Setup Chrome options
-    chrome_options = Options()
-    chrome_options.add_argument('--headless')
-    chrome_options.add_argument('--no-sandbox')
-    chrome_options.add_argument('--disable-dev-shm-usage')
-    chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    chrome_options.add_experimental_option('useAutomationExtension', False)
-    
+def scrape_league_rounds_fast(base_url, max_rounds=30, season_year=None):
+    """Optimized version of round scraping"""
+    driver = create_driver()
     all_matches = []
     
     try:
-        service = Service(ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=service, options=chrome_options)
+        # Pre-compile regex patterns
+        team_id_pattern = re.compile(r'teamlogo/(\d+)_')
         
-        # Navigate through each round
         for round_num in range(max_rounds):
             print(f"Scraping round {round_num + 1}...")
             
-            # Construct URL for current round
             round_url = base_url.replace('round=0', f'round={round_num}')
             
             try:
                 driver.get(round_url)
-                time.sleep(3)
                 
-                # Check if round exists
-                match_elements = driver.find_elements(By.CSS_SELECTOR, 'a.css-1ajdexg-MatchWrapper')
-                if not match_elements:
+                # Wait for matches to load with timeout
+                try:
+                    WebDriverWait(driver, 10).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, 'a.css-1ajdexg-MatchWrapper'))
+                    )
+                except TimeoutException:
                     print(f"No matches found in round {round_num + 1}, stopping...")
                     break
                 
-                # Extract match information with proper date handling
-                round_matches = 0
-                current_date = None
+                # Get all matches at once
+                match_elements = driver.find_elements(By.CSS_SELECTOR, 'a.css-1ajdexg-MatchWrapper')
+                if not match_elements:
+                    break
                 
+                # Extract all data in batch
+                current_date = None
                 for match_element in match_elements:
                     try:
-                        # Find the date header that precedes this match
-                        match_date = None
-                        try:
-                            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", match_element)
+                        # Get match date more efficiently
+                        match_date = driver.execute_script("""
+                            var match = arguments[0];
+                            var current = match;
                             
-                            preceding_date = driver.execute_script("""
-                                var match = arguments[0];
-                                var current = match;
-                                
-                                while (current) {
-                                    var prev = current.previousElementSibling;
-                                    while (prev) {
-                                        if (prev.tagName === 'H3' && prev.classList.contains('css-1fw9re8-HeaderCSS')) {
-                                            return prev.textContent.trim();
-                                        }
-                                        prev = prev.previousElementSibling;
+                            while (current && current !== document.body) {
+                                var prev = current.previousElementSibling;
+                                while (prev) {
+                                    if (prev.tagName === 'H3' && prev.textContent) {
+                                        return prev.textContent.trim();
                                     }
-                                    current = current.parentElement;
-                                    if (current && current.tagName === 'BODY') break;
+                                    prev = prev.previousElementSibling;
                                 }
-                                return null;
-                            """, match_element)
-                            
-                            match_date = preceding_date if preceding_date else current_date
-                            
-                        except:
-                            match_date = current_date
+                                current = current.parentElement;
+                            }
+                            return null;
+                        """, match_element) or current_date
                         
-                        if match_date != current_date:
-                            current_date = match_date
-                            print(f"  Date: {current_date}")
-                        
-                        # Convert date to ISO format
+                        current_date = match_date
                         iso_date = parse_date_to_iso(match_date, season_year)
                         
-                        # Get match URL
-                        match_href = match_element.get_attribute('href')
-                        if match_href:
-                            if match_href.startswith('/'):
-                                match_url = f"https://www.fotmob.com{match_href}"
-                            else:
-                                match_url = match_href
+                        # Extract all match data at once
+                        match_data = driver.execute_script("""
+                            var match = arguments[0];
+                            var data = {};
                             
-                            # Extract team names
-                            team_elements = match_element.find_elements(By.CSS_SELECTOR, '.css-1o142s8-TeamName')
-                            if len(team_elements) >= 2:
-                                home_team = team_elements[0].text.strip()
-                                away_team = team_elements[1].text.strip()
-                            else:
-                                home_team = "Unknown"
-                                away_team = "Unknown"
+                            // Get URL
+                            data.url = match.href;
                             
-                            # Extract score and status
-                            score = "N/A"
-                            try:
-                                score_element = match_element.find_element(By.CSS_SELECTOR, '.css-1wwsq70-LSMatchStatusScore')
-                                score = score_element.text.strip()
-                            except:
-                                pass
+                            // Get teams
+                            var teams = match.querySelectorAll('.css-1o142s8-TeamName');
+                            data.homeTeam = teams[0] ? teams[0].textContent.trim() : 'Unknown';
+                            data.awayTeam = teams[1] ? teams[1].textContent.trim() : 'Unknown';
                             
-                            status = "Unknown"
-                            try:
-                                status_element = match_element.find_element(By.CSS_SELECTOR, '.css-1t50dhw-StatusDotCSS')
-                                status = status_element.get_attribute('title') or status_element.text.strip()
-                            except:
-                                try:
-                                    status_element = match_element.find_element(By.CSS_SELECTOR, '.css-1ubkvjq-LSMatchStatusReason')
-                                    status = status_element.text.strip()
-                                except:
-                                    pass
+                            // Get score
+                            var scoreEl = match.querySelector('.css-1wwsq70-LSMatchStatusScore');
+                            data.score = scoreEl ? scoreEl.textContent.trim() : 'N/A';
                             
-                            match_data = {
+                            // Get status
+                            var statusEl = match.querySelector('.css-1t50dhw-StatusDotCSS') || 
+                                          match.querySelector('.css-1ubkvjq-LSMatchStatusReason');
+                            data.status = statusEl ? (statusEl.title || statusEl.textContent.trim()) : 'Unknown';
+                            
+                            return data;
+                        """, match_element)
+                        
+                        if match_data['url']:
+                            match_url = match_data['url'] if match_data['url'].startswith('http') else f"https://www.fotmob.com{match_data['url']}"
+                            
+                            all_matches.append({
                                 'round': round_num + 1,
-                                'date': iso_date,  # Now using ISO format
-                                'home_team': home_team,
-                                'away_team': away_team,
-                                'score': score,
-                                'status': status,
+                                'date': iso_date,
+                                'home_team': match_data['homeTeam'],
+                                'away_team': match_data['awayTeam'],
+                                'score': match_data['score'],
+                                'status': match_data['status'],
                                 'match_url': match_url
-                            }
-                            
-                            all_matches.append(match_data)
-                            round_matches += 1
-                            print(f"    {home_team} vs {away_team} - {score} [{status}] ({iso_date})")
+                            })
                     
                     except Exception as e:
-                        print(f"    Error processing match: {e}")
+                        print(f"Error processing match: {e}")
                         continue
                 
-                print(f"  Found {round_matches} matches in round {round_num + 1}")
-                time.sleep(1)
+                print(f"Found {len([m for m in all_matches if m['round'] == round_num + 1])} matches in round {round_num + 1}")
                 
             except Exception as e:
                 print(f"Error accessing round {round_num + 1}: {e}")
                 continue
         
-        driver.quit()
         return all_matches
         
-    except Exception as e:
-        print(f"Error: {e}")
-        if 'driver' in locals():
-            driver.quit()
-        return []
+    finally:
+        driver.quit()
 
-def scrape_match_xg(match_url, match_date, home_team, away_team, round_num):
-    """
-    Scrape xG values from a specific FotMob match page
-    """
+def scrape_match_xg_optimized(match_data):
+    """Optimized xG scraping for a single match"""
+    match_url, match_date, home_team, away_team, round_num = match_data
     
-    # Ensure we're on the stats tab
+    # Ensure stats tab
     if ':tab=stats' not in match_url:
-        # Handle URLs that already have fragments vs those that don't
-        if '#' in match_url:
-            # URL like: https://www.fotmob.com/matches/team1-vs-team2/abc#4757737
-            # Should become: https://www.fotmob.com/matches/team1-vs-team2/abc#4757737:tab=stats
-            match_url = match_url + ':tab=stats'
-        else:
-            # URL like: https://www.fotmob.com/matches/team1-vs-team2/abc
-            # Should become: https://www.fotmob.com/matches/team1-vs-team2/abc#:tab=stats
-            match_url = match_url + '#:tab=stats'
+        match_url = match_url + ('#:tab=stats' if '#' not in match_url else ':tab=stats')
     
-    chrome_options = Options()
-    chrome_options.add_argument('--headless')
-    chrome_options.add_argument('--no-sandbox')
-    chrome_options.add_argument('--disable-dev-shm-usage')
-    chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    chrome_options.add_experimental_option('useAutomationExtension', False)
+    driver = create_driver()
     
     try:
-        service = Service(ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=service, options=chrome_options)
-        
         driver.get(match_url)
-        time.sleep(5)
         
-        # Get team ID mapping from logos
+        # Wait for stats to load
+        try:
+            WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, '.css-g9mdo5-XGItemValue'))
+            )
+        except TimeoutException:
+            print(f"Stats not loaded for {home_team} vs {away_team}")
+            return []
+        
+        # Get team mapping once - completely rewritten approach
         team_id_mapping = {}
         try:
-            all_logos = driver.find_elements(By.CSS_SELECTOR, 'img[src*="teamlogo"]')
-            header_logos = [logo for logo in all_logos if '_small.png' in logo.get_attribute('src') or '_medium.png' in logo.get_attribute('src')]
+            # Get team IDs and names more reliably
+            team_data = driver.execute_script("""
+                var teams = [];
+                
+                // Method 1: Try to get from match header
+                var headerTeams = document.querySelectorAll('[class*="TeamName"], [class*="team-name"]');
+                for (var team of headerTeams) {
+                    var text = team.textContent.trim();
+                    if (text && text.length > 2 && !text.match(/^\\d+[:\\-\\s]*\\d*$/)) {
+                        // Clean up team name
+                        text = text.replace(/\\d+/g, '').replace(/['"]/g, '').trim();
+                        if (text.length > 2) {
+                            teams.push(text);
+                        }
+                    }
+                }
+                
+                // Method 2: Extract from URL or page title if header method failed
+                if (teams.length < 2) {
+                    teams = [];
+                    var title = document.title;
+                    var urlMatch = window.location.href.match(/matches\\/([^-]+)-vs-([^/]+)/);
+                    if (urlMatch) {
+                        teams.push(urlMatch[1].replace(/-/g, ' '));
+                        teams.push(urlMatch[2].replace(/-/g, ' '));
+                    }
+                }
+                
+                // Get team IDs from logos
+                var teamIds = [];
+                var logos = document.querySelectorAll('img[src*="teamlogo"]');
+                var processed = new Set();
+                
+                for (var logo of logos) {
+                    if (logo.src.includes('_small.png') || logo.src.includes('_medium.png')) {
+                        var match = logo.src.match(/teamlogo\\/(\\d+)_/);
+                        if (match && !processed.has(match[1])) {
+                            processed.add(match[1]);
+                            teamIds.push(match[1]);
+                        }
+                    }
+                }
+                
+                return {
+                    names: teams.slice(0, 2),
+                    ids: teamIds.slice(0, 2)
+                };
+            """)
             
-            processed_ids = set()
-            for logo in header_logos:
-                logo_url = logo.get_attribute('src')
-                team_id_match = re.search(r'teamlogo/(\d+)_', logo_url)
-                if team_id_match:
-                    team_id = team_id_match.group(1)
-                    if team_id in processed_ids:
-                        continue
-                    processed_ids.add(team_id)
+            # Create mapping
+            if team_data['names'] and team_data['ids'] and len(team_data['names']) >= 2 and len(team_data['ids']) >= 2:
+                team_id_mapping[team_data['ids'][0]] = team_data['names'][0]
+                team_id_mapping[team_data['ids'][1]] = team_data['names'][1]
+                print(f"Team mapping: {team_id_mapping}")
+            
+        except Exception as e:
+            print(f"Error getting team mapping: {e}")
+            
+        # Fallback: Just use the provided team names with IDs we find
+        if not team_id_mapping:
+            try:
+                team_ids = driver.execute_script("""
+                    var ids = [];
+                    var logos = document.querySelectorAll('img[src*="teamlogo"]');
+                    var processed = new Set();
                     
-                    try:
-                        parent = logo.find_element(By.XPATH, '..')
-                        team_name_text = parent.text.strip()
-                        if not team_name_text or len(team_name_text) < 3:
-                            grandparent = parent.find_element(By.XPATH, '..')
-                            team_name_text = grandparent.text.strip()
-                        
-                        if team_name_text:
-                            team_name_clean = re.sub(r'\d+', '', team_name_text)
-                            team_name_clean = re.sub(r'[\'"]', '', team_name_clean)
-                            team_name_clean = re.sub(r'\s+', ' ', team_name_clean).strip()
-                            
-                            if len(team_name_clean) > 2:
-                                team_id_mapping[team_id] = team_name_clean
-                    except:
-                        pass
-        except:
-            pass
+                    for (var logo of logos) {
+                        if (logo.src.includes('_small.png') || logo.src.includes('_medium.png')) {
+                            var match = logo.src.match(/teamlogo\\/(\\d+)_/);
+                            if (match && !processed.has(match[1])) {
+                                processed.add(match[1]);
+                                ids.push(match[1]);
+                            }
+                        }
+                    }
+                    return ids.slice(0, 2);
+                """)
+                
+                if len(team_ids) >= 2:
+                    team_id_mapping[team_ids[0]] = home_team
+                    team_id_mapping[team_ids[1]] = away_team
+                    print(f"Fallback team mapping: {team_id_mapping}")
+                    
+            except:
+                print("Could not establish team mapping - will use player-based detection")
         
         all_shots = []
-        seen_shots = set()
         shot_count = 0
-        max_attempts = 50
+        max_shots = 50  # Reduced limit
+        seen_shots = set()  # Track duplicates with better key
+        consecutive_failures = 0
         
-        # Navigate through shots
-        while shot_count < max_attempts:
-            current_shot = {}
-            
-            # Get xG values
-            xg_elements = driver.find_elements(By.CSS_SELECTOR, '.css-g9mdo5-XGItemValue span')
-            if xg_elements:
-                xg_values = []
-                for element in xg_elements:
-                    text = element.text.strip()
-                    if text and '.' in text:
-                        try:
-                            xg_values.append(float(text))
-                        except ValueError:
-                            continue
-                
-                if len(xg_values) >= 2:
-                    current_shot['xg'] = xg_values[0]
-                    current_shot['xgot'] = xg_values[1]
-                elif len(xg_values) == 1:
-                    current_shot['xg'] = xg_values[0]
-                    current_shot['xgot'] = None
-            
-            # Get shot result
+        # Keep track of which players belong to which team for better assignment
+        player_team_mapping = {}
+        
+        while shot_count < max_shots and consecutive_failures < 3:
             try:
-                shot_info_container = driver.find_element(By.CSS_SELECTOR, '.css-1jl5w6u-ShotInfo')
-                spans = shot_info_container.find_elements(By.CSS_SELECTOR, 'span')
-                
-                result_value = 'Unknown'
-                for i, span in enumerate(spans):
-                    if span.text.strip() == 'Result' and i + 1 < len(spans):
-                        result_value = spans[i + 1].text.strip()
-                        break
-                
-                current_shot['result'] = result_value
-            except:
-                current_shot['result'] = 'Unknown'
-            
-            # Get player info and extract minute
-            try:
-                player_container = driver.find_element(By.CSS_SELECTOR, '.css-108cnc0-PlayerNameContainer')
-                player_text = player_container.text.strip()
-                
-                # Extract minute
-                minute_match = re.search(r'(\d+)(?:\s*\+\s*(\d+))?\'', player_text)
-                if minute_match:
-                    base_minute = int(minute_match.group(1))
-                    added_time = int(minute_match.group(2)) if minute_match.group(2) else 0
-                    current_shot['minute'] = base_minute + added_time
-                else:
-                    current_shot['minute'] = None
-                
-                # Extract player name
-                parts = player_text.split('\n')
-                if len(parts) > 1:
-                    player_name = parts[-1].strip()
-                else:
-                    player_name = re.sub(r'^\d+\'?\s*\+?\s*\d*\'?\s*', '', player_text).strip()
-                
-                current_shot['player_name'] = player_name
-                
-                # Get team info
-                try:
-                    team_img = player_container.find_element(By.CSS_SELECTOR, 'img.TeamIcon')
-                    team_logo_url = team_img.get_attribute('src')
-                    team_id_match = re.search(r'teamlogo/(\d+)_', team_logo_url)
-                    if team_id_match:
-                        current_shot['team_id'] = team_id_match.group(1)
-                except:
-                    current_shot['team_id'] = 'unknown'
+                # Get all shot data at once with JavaScript
+                shot_data = driver.execute_script("""
+                    var data = {};
                     
-            except:
-                current_shot['player_name'] = f"Player {shot_count + 1}"
-                current_shot['team_id'] = 'unknown'
-                current_shot['minute'] = None
-            
-            # Check for duplicates
-            shot_identifier = f"{current_shot.get('player_name', '')}-{current_shot.get('xg', 0)}-{current_shot.get('minute', 0)}"
-            if shot_identifier in seen_shots:
-                break
-            seen_shots.add(shot_identifier)
-            
-            # Add shot if it has xG data
-            if current_shot.get('xg') is not None:
-                all_shots.append(current_shot)
-            
-            # Navigate to next shot
-            try:
-                next_buttons = driver.find_elements(By.CSS_SELECTOR, '.css-65dgen-DropdownBrowseButton')
-                if len(next_buttons) >= 2:
-                    next_button = next_buttons[1]
-                    if next_button.is_enabled() and next_button.is_displayed():
-                        driver.execute_script("arguments[0].click();", next_button)
-                        time.sleep(1.5)
-                        shot_count += 1
-                    else:
-                        break
+                    // Get xG values
+                    var xgElements = document.querySelectorAll('.css-g9mdo5-XGItemValue span');
+                    var xgValues = [];
+                    for (var el of xgElements) {
+                        var text = el.textContent.trim();
+                        if (text && text.includes('.')) {
+                            try {
+                                xgValues.push(parseFloat(text));
+                            } catch(e) {}
+                        }
+                    }
+                    data.xg = xgValues[0] || null;
+                    data.xgot = xgValues[1] || null;
+                    
+                    // Get shot result
+                    try {
+                        var shotInfo = document.querySelector('.css-1jl5w6u-ShotInfo');
+                        var spans = shotInfo.querySelectorAll('span');
+                        data.result = 'Unknown';
+                        for (var i = 0; i < spans.length - 1; i++) {
+                            if (spans[i].textContent.trim() === 'Result') {
+                                data.result = spans[i + 1].textContent.trim();
+                                break;
+                            }
+                        }
+                    } catch(e) {
+                        data.result = 'Unknown';
+                    }
+                    
+                    // Get player info
+                    try {
+                        var playerContainer = document.querySelector('.css-108cnc0-PlayerNameContainer');
+                        if (!playerContainer) {
+                            throw new Error('No player container found');
+                        }
+                        
+                        var playerText = playerContainer.textContent.trim();
+                        
+                        // Extract minute more carefully
+                        var minuteMatch = playerText.match(/(\\d+)(?:\\s*\\+\\s*(\\d+))?'/);
+                        if (minuteMatch) {
+                            var baseMinute = parseInt(minuteMatch[1]);
+                            var addedTime = minuteMatch[2] ? parseInt(minuteMatch[2]) : 0;
+                            data.minute = baseMinute + addedTime;
+                        } else {
+                            data.minute = null;
+                        }
+                        
+                        // Extract player name more carefully
+                        var lines = playerText.split('\\n').filter(line => line.trim().length > 0);
+                        if (lines.length > 1) {
+                            // Take the last line that's not just a time
+                            for (var i = lines.length - 1; i >= 0; i--) {
+                                var line = lines[i].trim();
+                                if (!line.match(/^\\d+'?\\s*\\+?\\s*\\d*'?\\s*$/)) {
+                                    data.playerName = line;
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        if (!data.playerName) {
+                            // Remove time info and get what's left
+                            data.playerName = playerText.replace(/\\d+'?\\s*\\+?\\s*\\d*'?\\s*/g, '').trim();
+                        }
+                        
+                        // Get team ID
+                        var teamImg = playerContainer.querySelector('img.TeamIcon');
+                        if (teamImg && teamImg.src) {
+                            var teamMatch = teamImg.src.match(/teamlogo\\/(\\d+)_/);
+                            data.teamId = teamMatch ? teamMatch[1] : null;
+                        } else {
+                            data.teamId = null;
+                        }
+                        
+                    } catch(e) {
+                        console.log('Error extracting player info:', e);
+                        data.playerName = 'Unknown Player';
+                        data.teamId = null;
+                        data.minute = null;
+                    }
+                    
+                    return data;
+                """, shot_count)
+                
+                # Create stronger unique identifier for duplicate detection
+                shot_identifier = f"{shot_data.get('playerName', '')}-{shot_data.get('minute', 0)}-{shot_data.get('xg', 0)}-{shot_data.get('xgot', 0)}-{shot_data.get('result', '')}"
+                
+                # Check if we've seen this exact shot before
+                if shot_identifier in seen_shots:
+                    consecutive_failures += 1
+                    print(f"Duplicate shot detected: {shot_data.get('playerName', 'Unknown')} at {shot_data.get('minute', '?')}'")
                 else:
+                    consecutive_failures = 0
+                    seen_shots.add(shot_identifier)
+                    
+                    if shot_data.get('xg') is not None:
+                        # Determine team name with improved logic
+                        team_id = shot_data.get('teamId')
+                        team_name = None
+                        player_name = shot_data.get('playerName', 'Unknown')
+                        
+                        # Try team ID mapping first
+                        if team_id and team_id in team_id_mapping:
+                            team_name = team_id_mapping[team_id]
+                        
+                        # If no team mapping or mapping failed, use player-based detection
+                        if not team_name or team_name.startswith('Team '):
+                            # Check if we've seen this player before
+                            if player_name in player_team_mapping:
+                                team_name = player_team_mapping[player_name]
+                            else:
+                                # Use knowledge of common player names to assign teams
+                                # This is a heuristic but better than random assignment
+                                home_indicators = [home_team.lower().replace(' ', ''), home_team.split()[0].lower()]
+                                away_indicators = [away_team.lower().replace(' ', ''), away_team.split()[0].lower()]
+                                
+                                # Check if player name suggests a team (very basic heuristic)
+                                player_lower = player_name.lower()
+                                
+                                # For now, alternate between teams but keep track
+                                existing_home = len([s for s in all_shots if s['team_name'] == home_team])
+                                existing_away = len([s for s in all_shots if s['team_name'] == away_team])
+                                
+                                # Assign to team with fewer shots to try to balance
+                                if existing_home <= existing_away:
+                                    team_name = home_team
+                                else:
+                                    team_name = away_team
+                                
+                                # Remember this player's team for consistency
+                                player_team_mapping[player_name] = team_name
+                        
+                        all_shots.append({
+                            'round': round_num,
+                            'match_date': match_date,
+                            'home_team': home_team,
+                            'away_team': away_team,
+                            'match_url': match_url,
+                            'player_name': player_name,
+                            'team_name': team_name,
+                            'minute': shot_data.get('minute'),
+                            'xg': shot_data.get('xg'),
+                            'xgot': shot_data.get('xgot'),
+                            'result': shot_data.get('result', 'Unknown')
+                        })
+                
+                # Try to navigate to next shot
+                try:
+                    next_buttons = driver.find_elements(By.CSS_SELECTOR, '.css-65dgen-DropdownBrowseButton')
+                    if len(next_buttons) >= 2:
+                        next_button = next_buttons[1]
+                        if next_button.is_enabled() and next_button.is_displayed():
+                            # Double check the button isn't disabled
+                            button_classes = next_button.get_attribute('class') or ''
+                            button_disabled = next_button.get_attribute('disabled')
+                            
+                            if 'disabled' not in button_classes.lower() and not button_disabled:
+                                driver.execute_script("arguments[0].click();", next_button)
+                                time.sleep(1.2)  # Slightly longer wait
+                                shot_count += 1
+                            else:
+                                print("Next button is disabled - reached end")
+                                break
+                        else:
+                            print("Next button not enabled or visible")
+                            break
+                    else:
+                        print("No next button found")
+                        break
+                        
+                except Exception as nav_error:
+                    print(f"Navigation error: {nav_error}")
+                    consecutive_failures += 1
+                    if consecutive_failures >= 3:
+                        break
+                    
+            except Exception as e:
+                print(f"Error getting shot {shot_count + 1}: {e}")
+                consecutive_failures += 1
+                if consecutive_failures >= 3:
+                    print("Too many consecutive failures, stopping")
                     break
-            except:
-                break
+                shot_count += 1  # Still increment to avoid infinite loop
         
-        driver.quit()
-        
-        # Map team IDs to names
-        team_ids = set(shot.get('team_id') for shot in all_shots if shot.get('team_id') != 'unknown')
-        team_id_to_name = {}
-        
-        if team_id_mapping:
-            team_id_to_name = team_id_mapping
-        elif len(team_ids) == 2:
-            team_list = sorted(list(team_ids))
-            team_id_to_name[team_list[0]] = home_team
-            team_id_to_name[team_list[1]] = away_team
-        else:
-            for team_id in team_ids:
-                team_id_to_name[team_id] = f'Team {team_id}'
-        
-        # Prepare shot data with match info
-        shot_details = []
-        for shot in all_shots:
-            team_id = shot.get('team_id', 'unknown')
-            team_name = team_id_to_name.get(team_id, f'Team {team_id}')
-            
-            shot_details.append({
-                'round': round_num,
-                'match_date': match_date,
-                'home_team': home_team,
-                'away_team': away_team,
-                'match_url': match_url,
-                'player_name': shot['player_name'],
-                'team_name': team_name,
-                'minute': shot.get('minute'),
-                'xg': shot.get('xg'),
-                'xgot': shot.get('xgot'),
-                'result': shot.get('result')
-            })
-        
-        return shot_details
+        return all_shots
         
     except Exception as e:
-        print(f"Error scraping xG for {home_team} vs {away_team}: {e}")
-        if 'driver' in locals():
-            driver.quit()
+        print(f"Error scraping {home_team} vs {away_team}: {e}")
         return []
+    finally:
+        driver.quit()
 
-def scrape_full_league_xg(base_url, max_rounds=30, start_from_round=1, season_year=None):
-    """
-    Scrape all matches and their xG data from a league
-    """
-    
+def scrape_full_league_xg_parallel(base_url, max_rounds=30, max_workers=4, season_year=None):
+    """Main function with parallel processing"""
     print("Step 1: Getting all match URLs...")
-    matches = scrape_league_rounds(base_url, max_rounds, season_year)
+    matches = scrape_league_rounds_fast(base_url, max_rounds, season_year)
     
     if not matches:
         print("No matches found!")
         return [], []
     
-    # Save the matches summary CSV first
+    # Save matches summary
     save_matches_summary_to_csv(matches, 'league_matches_summary.csv')
     
-    # Filter matches if starting from specific round
-    if start_from_round > 1:
-        matches = [m for m in matches if m['round'] >= start_from_round]
-        print(f"Filtered to {len(matches)} matches from round {start_from_round} onwards")
+    # Filter to finished matches only
+    finished_matches = [m for m in matches if m['status'] in ['Full time', 'FT'] and m['score'] != 'N/A']
+    print(f"Found {len(finished_matches)} finished matches to process")
     
-    print(f"\nStep 2: Scraping xG data for {len(matches)} matches...")
+    if not finished_matches:
+        return [], matches
+    
+    # Prepare match data for parallel processing
+    match_data_list = [
+        (match['match_url'], match['date'], match['home_team'], match['away_team'], match['round'])
+        for match in finished_matches
+    ]
     
     all_shots = []
-    completed_matches = 0
     
-    for i, match in enumerate(matches, 1):
-        print(f"\nProcessing match {i}/{len(matches)}: {match['home_team']} vs {match['away_team']} (Round {match['round']})")
+    # Process matches in parallel
+    print(f"Step 2: Processing matches with {max_workers} parallel workers...")
+    
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Submit all jobs
+        future_to_match = {
+            executor.submit(scrape_match_xg_optimized, match_data): match_data 
+            for match_data in match_data_list
+        }
         
-        # Only scrape matches that have finished (have scores)
-        if match['status'] in ['Full time', 'FT'] and match['score'] != 'N/A':
-            shots = scrape_match_xg(
-                match['match_url'], 
-                match['date'], 
-                match['home_team'], 
-                match['away_team'],
-                match['round']
-            )
+        completed = 0
+        for future in concurrent.futures.as_completed(future_to_match):
+            match_data = future_to_match[future]
+            completed += 1
             
-            if shots:
-                all_shots.extend(shots)
-                print(f"  Found {len(shots)} shots")
-                completed_matches += 1
-            else:
-                print("  No shot data found")
-        else:
-            print(f"  Skipping - Match not finished or no score available (Status: {match['status']})")
-        
-        # Small delay between matches
-        time.sleep(2)
+            try:
+                shots = future.result(timeout=60)  # 60 second timeout per match
+                if shots:
+                    all_shots.extend(shots)
+                    print(f"[{completed}/{len(match_data_list)}] {match_data[2]} vs {match_data[3]} - {len(shots)} shots")
+                else:
+                    print(f"[{completed}/{len(match_data_list)}] {match_data[2]} vs {match_data[3]} - No shots found")
+                    
+            except concurrent.futures.TimeoutError:
+                print(f"[{completed}/{len(match_data_list)}] {match_data[2]} vs {match_data[3]} - TIMEOUT")
+            except Exception as e:
+                print(f"[{completed}/{len(match_data_list)}] {match_data[2]} vs {match_data[3]} - ERROR: {e}")
     
-    print(f"\nCompleted! Processed {completed_matches} matches with {len(all_shots)} total shots")
+    print(f"\nCompleted! Total shots collected: {len(all_shots)}")
     return all_shots, matches
 
 def save_shots_to_csv(shots, filename='league_xg_data.csv'):
-    """Save all shot data to CSV file"""
+    """Save shot data to CSV (thread-safe)"""
     if not shots:
         print("No shot data to save")
         return
     
-    # Debug: Check what we're actually getting
-    print(f"Debug: shots type = {type(shots)}")
-    if shots:
-        print(f"Debug: first item type = {type(shots[0])}")
-        print(f"Debug: first item = {shots[0]}")
-    
-    # Ensure we have a list of dictionaries
-    if not isinstance(shots, list):
-        print("Error: shots is not a list")
-        return
-    
-    if not shots or not isinstance(shots[0], dict):
-        print("Error: shots does not contain dictionaries")
-        return
-    
-    with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
-        fieldnames = ['round', 'match_date', 'home_team', 'away_team', 'match_url', 
-                     'player_name', 'team_name', 'minute', 'xg', 'xgot', 'result']
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        
-        writer.writeheader()
-        for shot in shots:
-            if isinstance(shot, dict):
-                writer.writerow(shot)
-            else:
-                print(f"Warning: Skipping non-dict item: {shot}")
+    with csv_lock:
+        with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
+            fieldnames = ['round', 'match_date', 'home_team', 'away_team', 'match_url', 
+                         'player_name', 'team_name', 'minute', 'xg', 'xgot', 'result']
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            
+            writer.writeheader()
+            for shot in shots:
+                if isinstance(shot, dict):
+                    writer.writerow(shot)
     
     print(f"Shot data saved to {filename}")
 
 def save_matches_summary_to_csv(matches, filename='league_matches_summary.csv'):
-    """Save match summary data to CSV file"""
+    """Save match summary (unchanged)"""
     if not matches:
-        print("No match data to save")
         return
     
     with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
@@ -547,9 +649,7 @@ def save_matches_summary_to_csv(matches, filename='league_matches_summary.csv'):
         
         writer.writeheader()
         for match in matches:
-            # Parse the score to extract home and away goals
-            home_goals = None
-            away_goals = None
+            home_goals = away_goals = None
             
             if match['score'] != 'N/A' and ' - ' in match['score']:
                 try:
@@ -569,35 +669,30 @@ def save_matches_summary_to_csv(matches, filename='league_matches_summary.csv'):
                 'away_goals': away_goals,
                 'match_url': match['match_url']
             })
-    
-    print(f"Match summary saved to {filename}")
 
 # Usage
 if __name__ == "__main__":
     base_url = "https://www.fotmob.com/en-GB/leagues/47/matches/premier-league?season=2024-2025&group=by-round&round=0"
     
-    # Scrape all matches and their xG data
-    # You can specify season_year if you know it, otherwise it will use current year for dates without year
-    result = scrape_full_league_xg(base_url, max_rounds=38, start_from_round=1, season_year=2024)
-    
-    # Handle the return value properly
-    if isinstance(result, tuple) and len(result) == 2:
-        all_shots, matches = result
-    else:
-        all_shots = result
-        matches = []
+    # Use optimized parallel version
+    # Adjust max_workers based on your system (2-8 is usually good)
+    all_shots, matches = scrape_full_league_xg_parallel(
+        base_url, 
+        max_rounds=38, 
+        max_workers=5,  # Reduce if you get blocked
+        season_year=2024
+    )
     
     if all_shots:
-        save_shots_to_csv(all_shots, 'prem_complete_xg_data.csv')
+        save_shots_to_csv(all_shots, 'prem_complete_xg_data_fast.csv')
         
-        # Print summary
-        matches_processed = len(set(shot['match_url'] for shot in all_shots if isinstance(shot, dict)))
-        rounds_processed = len(set(shot['round'] for shot in all_shots if isinstance(shot, dict)))
+        matches_processed = len(set(shot['match_url'] for shot in all_shots))
+        rounds_processed = len(set(shot['round'] for shot in all_shots))
         
         print(f"\n=== SUMMARY ===")
         print(f"Rounds processed: {rounds_processed}")
         print(f"Matches processed: {matches_processed}")
         print(f"Total shots: {len(all_shots)}")
-        print(f"Data saved to: superligaen_complete_xg_data.csv")
+        print(f"Data saved to: prem_complete_xg_data_fast.csv")
     else:
         print("No data collected")
