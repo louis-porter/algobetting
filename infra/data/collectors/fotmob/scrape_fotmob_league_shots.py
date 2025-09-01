@@ -34,11 +34,6 @@ def get_optimized_chrome_options():
     chrome_options.add_argument('--disable-features=VizDisplayCompositor')
     chrome_options.add_argument('--disable-blink-features=AutomationControlled')
     
-    # Remove problematic options that can cause startup issues
-    # chrome_options.add_argument('--disable-javascript')  # REMOVED - needed for dynamic content
-    # chrome_options.add_argument('--disable-css')  # REMOVED - needed for selectors
-    # chrome_options.add_argument('--page-load-strategy=eager')  # REMOVED - can cause issues
-    
     chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
     chrome_options.add_experimental_option('useAutomationExtension', False)
     
@@ -56,8 +51,8 @@ def create_driver():
         driver = webdriver.Chrome(service=service, options=chrome_options)
         
         # Set reasonable timeouts
-        driver.set_page_load_timeout(30)  # Increased from 15
-        driver.implicitly_wait(5)  # Increased from 2
+        driver.set_page_load_timeout(30)
+        driver.implicitly_wait(5)
         
         return driver
     
@@ -82,7 +77,7 @@ def create_driver():
             raise
 
 def parse_date_to_iso(date_string, default_year=None):
-    """Convert various date formats to YYYY-MM-DD format (unchanged)"""
+    """Convert various date formats to YYYY-MM-DD format"""
     if not date_string or date_string.strip() == '':
         return None
     
@@ -132,6 +127,60 @@ def parse_date_to_iso(date_string, default_year=None):
         print(f"Error parsing date '{date_string}': {e}")
     
     return date_string
+
+def get_team_name_mapping(driver):
+    """
+    Extract team names using the improved logic from the individual match scraper
+    """
+    team_names = {}
+    team_id_mapping = {}
+    
+    # Extract team names from page title (Method 1)
+    try:
+        title_element = driver.find_element(By.TAG_NAME, 'title')
+        title_text = title_element.get_attribute('innerHTML')
+        vs_match = re.search(r'([^-]+?)\s+(?:vs?\.?|v\.?|-)\s+([^-]+?)(?:\s|$|\()', title_text, re.IGNORECASE)
+        if vs_match:
+            team_names['team1'] = vs_match.group(1).strip()
+            team_names['team2'] = vs_match.group(2).strip()
+    except:
+        team_names = {}
+    
+    # Get team ID mapping from logos (Method 2)
+    try:
+        all_logos = driver.find_elements(By.CSS_SELECTOR, 'img[src*="teamlogo"]')
+        header_logos = [logo for logo in all_logos if '_small.png' in logo.get_attribute('src') or '_medium.png' in logo.get_attribute('src')]
+        
+        processed_ids = set()
+        for logo in header_logos:
+            logo_url = logo.get_attribute('src')
+            team_id_match = re.search(r'teamlogo/(\d+)_', logo_url)
+            if team_id_match:
+                team_id = team_id_match.group(1)
+                if team_id in processed_ids:
+                    continue
+                processed_ids.add(team_id)
+                
+                try:
+                    parent = logo.find_element(By.XPATH, '..')
+                    team_name_text = parent.text.strip()
+                    if not team_name_text or len(team_name_text) < 3:
+                        grandparent = parent.find_element(By.XPATH, '..')
+                        team_name_text = grandparent.text.strip()
+                    
+                    if team_name_text:
+                        team_name_clean = re.sub(r'\d+', '', team_name_text)
+                        team_name_clean = re.sub(r'[\'"]', '', team_name_clean)
+                        team_name_clean = re.sub(r'\s+', ' ', team_name_clean).strip()
+                        
+                        if len(team_name_clean) > 2:
+                            team_id_mapping[team_id] = team_name_clean
+                except:
+                    pass
+    except:
+        pass
+    
+    return team_names, team_id_mapping
 
 def scrape_league_rounds_fast(base_url, max_rounds=30, season_year=None):
     """Optimized version of round scraping"""
@@ -242,8 +291,97 @@ def scrape_league_rounds_fast(base_url, max_rounds=30, season_year=None):
     finally:
         driver.quit()
 
-def scrape_match_xg_optimized(match_data):
-    """Optimized xG scraping for a single match"""
+def extract_red_cards(driver, match_date, home_team, away_team, round_num, match_url):
+    """Extract red card information from match page"""
+    red_cards = []
+    
+    try:
+        # Look for EventsWrapper which contains positioned events (stats page approach)
+        events_wrapper = driver.find_elements(By.CSS_SELECTOR, 'div.css-174drwo-EventsWrapper')
+        
+        if events_wrapper:
+            for wrapper in events_wrapper:
+                # Get all event containers within this wrapper
+                event_containers = wrapper.find_elements(By.CSS_SELECTOR, 'div.css-1stqhah-EventContainer')
+                
+                for i, container in enumerate(event_containers):
+                    # Check if this container has a red card icon
+                    red_card_svg = container.find_elements(By.CSS_SELECTOR, 'svg path[fill="#DD3636"]')
+                    
+                    if red_card_svg:
+                        # Determine team based on position - first container is typically home team
+                        team_name = home_team if i == 0 else away_team
+                        
+                        # Extract player information
+                        player_links = container.find_elements(By.CSS_SELECTOR, 'ul li a')
+                        
+                        for link in player_links:
+                            try:
+                                # Get player name and minute
+                                player_spans = link.find_elements(By.CSS_SELECTOR, 'span')
+                                if len(player_spans) >= 2:
+                                    player_name = player_spans[0].text.strip()
+                                    minute_text = player_spans[1].text.strip().replace("'", "")
+                                    
+                                    if player_name and minute_text.isdigit():
+                                        minute = int(minute_text)
+                                        
+                                        red_cards.append({
+                                            'round': round_num,
+                                            'match_date': match_date,
+                                            'home_team': home_team,
+                                            'away_team': away_team,
+                                            'match_url': match_url,
+                                            'player_name': player_name,
+                                            'team_name': team_name,
+                                            'minute': minute
+                                        })
+                                        
+                            except Exception as e:
+                                continue
+        
+        # Fallback: Look for any red card SVGs with the more generic approach
+        if not red_cards:
+            red_card_containers = driver.find_elements(By.CSS_SELECTOR, 'div[class*="EventContainer"]')
+            
+            for container in red_card_containers:
+                red_card_svg = container.find_elements(By.CSS_SELECTOR, 'svg path[fill="#DD3636"]')
+                
+                if red_card_svg:
+                    player_links = container.find_elements(By.CSS_SELECTOR, 'ul li a')
+                    
+                    for link in player_links:
+                        try:
+                            player_spans = link.find_elements(By.CSS_SELECTOR, 'span')
+                            if len(player_spans) >= 2:
+                                player_name = player_spans[0].text.strip()
+                                minute_text = player_spans[1].text.strip().replace("'", "")
+                                
+                                if player_name and minute_text.isdigit():
+                                    minute = int(minute_text)
+                                    
+                                    # Default to home team in fallback
+                                    red_cards.append({
+                                        'round': round_num,
+                                        'match_date': match_date,
+                                        'home_team': home_team,
+                                        'away_team': away_team,
+                                        'match_url': match_url,
+                                        'player_name': player_name,
+                                        'team_name': home_team,
+                                        'minute': minute
+                                    })
+                                    
+                        except Exception:
+                            continue
+                    
+    except Exception as e:
+        print(f"Error in red card extraction: {e}")
+    
+    return red_cards
+
+def scrape_match_shots_and_red_cards(match_data):
+    """Extract both shot data and red card data from a single match in one process"""
     match_url, match_date, home_team, away_team, round_num = match_data
     
     # Ensure stats tab
@@ -253,7 +391,9 @@ def scrape_match_xg_optimized(match_data):
     driver = create_driver()
     
     try:
-        driver.get(match_url)
+        # Go directly to stats page
+        stats_url = match_url if ':tab=stats' in match_url else match_url + ('#:tab=stats' if '#' not in match_url else ':tab=stats')
+        driver.get(stats_url)
         
         # Wait for stats to load
         try:
@@ -261,42 +401,21 @@ def scrape_match_xg_optimized(match_data):
                 EC.presence_of_element_located((By.CSS_SELECTOR, '.css-g9mdo5-XGItemValue'))
             )
         except TimeoutException:
-            print(f"Stats not loaded for {home_team} vs {away_team}")
-            return []
+            return [], []
         
-        # Get team mapping once - completely rewritten approach
-        team_id_mapping = {}
+        # Extract red cards first (from the same stats page)
+        red_cards = extract_red_cards(driver, match_date, home_team, away_team, round_num, match_url)
+        
+        # Get improved team mapping
+        team_names, team_id_mapping = get_team_name_mapping(driver)
+        
+        # Create comprehensive team mapping
+        final_team_mapping = {}
+        
+        # Try to get all team IDs from the page
         try:
-            # Get team IDs and names more reliably
-            team_data = driver.execute_script("""
-                var teams = [];
-                
-                // Method 1: Try to get from match header
-                var headerTeams = document.querySelectorAll('[class*="TeamName"], [class*="team-name"]');
-                for (var team of headerTeams) {
-                    var text = team.textContent.trim();
-                    if (text && text.length > 2 && !text.match(/^\\d+[:\\-\\s]*\\d*$/)) {
-                        // Clean up team name
-                        text = text.replace(/\\d+/g, '').replace(/['"]/g, '').trim();
-                        if (text.length > 2) {
-                            teams.push(text);
-                        }
-                    }
-                }
-                
-                // Method 2: Extract from URL or page title if header method failed
-                if (teams.length < 2) {
-                    teams = [];
-                    var title = document.title;
-                    var urlMatch = window.location.href.match(/matches\\/([^-]+)-vs-([^/]+)/);
-                    if (urlMatch) {
-                        teams.push(urlMatch[1].replace(/-/g, ' '));
-                        teams.push(urlMatch[2].replace(/-/g, ' '));
-                    }
-                }
-                
-                // Get team IDs from logos
-                var teamIds = [];
+            team_ids = driver.execute_script("""
+                var ids = [];
                 var logos = document.querySelectorAll('img[src*="teamlogo"]');
                 var processed = new Set();
                 
@@ -305,61 +424,33 @@ def scrape_match_xg_optimized(match_data):
                         var match = logo.src.match(/teamlogo\\/(\\d+)_/);
                         if (match && !processed.has(match[1])) {
                             processed.add(match[1]);
-                            teamIds.push(match[1]);
+                            ids.push(match[1]);
                         }
                     }
                 }
-                
-                return {
-                    names: teams.slice(0, 2),
-                    ids: teamIds.slice(0, 2)
-                };
+                return ids.slice(0, 2);
             """)
             
-            # Create mapping
-            if team_data['names'] and team_data['ids'] and len(team_data['names']) >= 2 and len(team_data['ids']) >= 2:
-                team_id_mapping[team_data['ids'][0]] = team_data['names'][0]
-                team_id_mapping[team_data['ids'][1]] = team_data['names'][1]
-                print(f"Team mapping: {team_id_mapping}")
+            # Priority mapping logic:
+            if team_id_mapping and len(team_id_mapping) >= 2:
+                final_team_mapping = team_id_mapping.copy()
+            elif team_names and len(team_ids) >= 2:
+                final_team_mapping[team_ids[0]] = team_names.get('team1', home_team)
+                final_team_mapping[team_ids[1]] = team_names.get('team2', away_team)
+            elif len(team_ids) >= 2:
+                final_team_mapping[team_ids[0]] = home_team
+                final_team_mapping[team_ids[1]] = away_team
             
         except Exception as e:
-            print(f"Error getting team mapping: {e}")
-            
-        # Fallback: Just use the provided team names with IDs we find
-        if not team_id_mapping:
-            try:
-                team_ids = driver.execute_script("""
-                    var ids = [];
-                    var logos = document.querySelectorAll('img[src*="teamlogo"]');
-                    var processed = new Set();
-                    
-                    for (var logo of logos) {
-                        if (logo.src.includes('_small.png') || logo.src.includes('_medium.png')) {
-                            var match = logo.src.match(/teamlogo\\/(\\d+)_/);
-                            if (match && !processed.has(match[1])) {
-                                processed.add(match[1]);
-                                ids.push(match[1]);
-                            }
-                        }
-                    }
-                    return ids.slice(0, 2);
-                """)
-                
-                if len(team_ids) >= 2:
-                    team_id_mapping[team_ids[0]] = home_team
-                    team_id_mapping[team_ids[1]] = away_team
-                    print(f"Fallback team mapping: {team_id_mapping}")
-                    
-            except:
-                print("Could not establish team mapping - will use player-based detection")
+            final_team_mapping = {}
         
         all_shots = []
         shot_count = 0
-        max_shots = 50  # Reduced limit
-        seen_shots = set()  # Track duplicates with better key
+        max_shots = 50
+        seen_shots = set()
         consecutive_failures = 0
         
-        # Keep track of which players belong to which team for better assignment
+        # Keep track of which players belong to which team for consistency
         player_team_mapping = {}
         
         while shot_count < max_shots and consecutive_failures < 3:
@@ -419,7 +510,6 @@ def scrape_match_xg_optimized(match_data):
                         // Extract player name more carefully
                         var lines = playerText.split('\\n').filter(line => line.trim().length > 0);
                         if (lines.length > 1) {
-                            // Take the last line that's not just a time
                             for (var i = lines.length - 1; i >= 0; i--) {
                                 var line = lines[i].trim();
                                 if (!line.match(/^\\d+'?\\s*\\+?\\s*\\d*'?\\s*$/)) {
@@ -430,7 +520,6 @@ def scrape_match_xg_optimized(match_data):
                         }
                         
                         if (!data.playerName) {
-                            // Remove time info and get what's left
                             data.playerName = playerText.replace(/\\d+'?\\s*\\+?\\s*\\d*'?\\s*/g, '').trim();
                         }
                         
@@ -451,7 +540,7 @@ def scrape_match_xg_optimized(match_data):
                     }
                     
                     return data;
-                """, shot_count)
+                """)
                 
                 # Create stronger unique identifier for duplicate detection
                 shot_identifier = f"{shot_data.get('playerName', '')}-{shot_data.get('minute', 0)}-{shot_data.get('xg', 0)}-{shot_data.get('xgot', 0)}-{shot_data.get('result', '')}"
@@ -459,7 +548,6 @@ def scrape_match_xg_optimized(match_data):
                 # Check if we've seen this exact shot before
                 if shot_identifier in seen_shots:
                     consecutive_failures += 1
-                    print(f"Duplicate shot detected: {shot_data.get('playerName', 'Unknown')} at {shot_data.get('minute', '?')}'")
                 else:
                     consecutive_failures = 0
                     seen_shots.add(shot_identifier)
@@ -470,29 +558,21 @@ def scrape_match_xg_optimized(match_data):
                         team_name = None
                         player_name = shot_data.get('playerName', 'Unknown')
                         
-                        # Try team ID mapping first
-                        if team_id and team_id in team_id_mapping:
-                            team_name = team_id_mapping[team_id]
+                        # Try final team mapping first
+                        if team_id and team_id in final_team_mapping:
+                            team_name = final_team_mapping[team_id]
                         
-                        # If no team mapping or mapping failed, use player-based detection
-                        if not team_name or team_name.startswith('Team '):
+                        # If no team mapping, use player-based consistency
+                        if not team_name:
                             # Check if we've seen this player before
                             if player_name in player_team_mapping:
                                 team_name = player_team_mapping[player_name]
                             else:
-                                # Use knowledge of common player names to assign teams
-                                # This is a heuristic but better than random assignment
-                                home_indicators = [home_team.lower().replace(' ', ''), home_team.split()[0].lower()]
-                                away_indicators = [away_team.lower().replace(' ', ''), away_team.split()[0].lower()]
-                                
-                                # Check if player name suggests a team (very basic heuristic)
-                                player_lower = player_name.lower()
-                                
-                                # For now, alternate between teams but keep track
+                                # Balance assignment between teams
                                 existing_home = len([s for s in all_shots if s['team_name'] == home_team])
                                 existing_away = len([s for s in all_shots if s['team_name'] == away_team])
                                 
-                                # Assign to team with fewer shots to try to balance
+                                # Assign to team with fewer shots
                                 if existing_home <= existing_away:
                                     team_name = home_team
                                 else:
@@ -521,64 +601,57 @@ def scrape_match_xg_optimized(match_data):
                     if len(next_buttons) >= 2:
                         next_button = next_buttons[1]
                         if next_button.is_enabled() and next_button.is_displayed():
-                            # Double check the button isn't disabled
                             button_classes = next_button.get_attribute('class') or ''
                             button_disabled = next_button.get_attribute('disabled')
                             
                             if 'disabled' not in button_classes.lower() and not button_disabled:
                                 driver.execute_script("arguments[0].click();", next_button)
-                                time.sleep(1.2)  # Slightly longer wait
+                                time.sleep(1.2)
                                 shot_count += 1
                             else:
-                                print("Next button is disabled - reached end")
                                 break
                         else:
-                            print("Next button not enabled or visible")
                             break
                     else:
-                        print("No next button found")
                         break
                         
                 except Exception as nav_error:
-                    print(f"Navigation error: {nav_error}")
                     consecutive_failures += 1
                     if consecutive_failures >= 3:
                         break
                     
             except Exception as e:
-                print(f"Error getting shot {shot_count + 1}: {e}")
                 consecutive_failures += 1
                 if consecutive_failures >= 3:
-                    print("Too many consecutive failures, stopping")
                     break
-                shot_count += 1  # Still increment to avoid infinite loop
+                shot_count += 1
         
-        return all_shots
+        return all_shots, red_cards
         
     except Exception as e:
         print(f"Error scraping {home_team} vs {away_team}: {e}")
-        return []
+        return [], []
     finally:
         driver.quit()
 
-def scrape_full_league_xg_parallel(base_url, max_rounds=30, max_workers=4, season_year=None):
-    """Main function with parallel processing"""
+def scrape_full_league_data_combined(base_url, max_rounds=30, max_workers=4, season_year=None):
+    """Main function with combined data collection but separate CSV outputs"""
     print("Step 1: Getting all match URLs...")
     matches = scrape_league_rounds_fast(base_url, max_rounds, season_year)
     
     if not matches:
         print("No matches found!")
-        return [], []
+        return [], [], []
     
-    # Save matches summary
-    save_matches_summary_to_csv(matches, 'league_matches_summary.csv')
+    # Save goals summary (matches with scores)
+    save_goals_to_csv(matches, 'goals.csv')
     
     # Filter to finished matches only
     finished_matches = [m for m in matches if m['status'] in ['Full time', 'FT'] and m['score'] != 'N/A']
     print(f"Found {len(finished_matches)} finished matches to process")
     
     if not finished_matches:
-        return [], matches
+        return [], [], matches
     
     # Prepare match data for parallel processing
     match_data_list = [
@@ -587,14 +660,15 @@ def scrape_full_league_xg_parallel(base_url, max_rounds=30, max_workers=4, seaso
     ]
     
     all_shots = []
+    all_red_cards = []
     
-    # Process matches in parallel
+    # Process both shots and red cards in one go with parallel processing
     print(f"Step 2: Processing matches with {max_workers} parallel workers...")
     
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         # Submit all jobs
         future_to_match = {
-            executor.submit(scrape_match_xg_optimized, match_data): match_data 
+            executor.submit(scrape_match_shots_and_red_cards, match_data): match_data 
             for match_data in match_data_list
         }
         
@@ -604,23 +678,37 @@ def scrape_full_league_xg_parallel(base_url, max_rounds=30, max_workers=4, seaso
             completed += 1
             
             try:
-                shots = future.result(timeout=60)  # 60 second timeout per match
+                shots, red_cards = future.result(timeout=60)
+                
                 if shots:
                     all_shots.extend(shots)
-                    print(f"[{completed}/{len(match_data_list)}] {match_data[2]} vs {match_data[3]} - {len(shots)} shots")
-                else:
-                    print(f"[{completed}/{len(match_data_list)}] {match_data[2]} vs {match_data[3]} - No shots found")
+                if red_cards:
+                    all_red_cards.extend(red_cards)
+                
+                shot_count = len(shots) if shots else 0
+                red_card_count = len(red_cards) if red_cards else 0
+                
+                status_parts = []
+                if shot_count > 0:
+                    status_parts.append(f"{shot_count} shots")
+                if red_card_count > 0:
+                    status_parts.append(f"{red_card_count} red cards")
+                if not status_parts:
+                    status_parts.append("no data")
+                
+                status = ", ".join(status_parts)
+                print(f"[{completed}/{len(match_data_list)}] {match_data[2]} vs {match_data[3]} - {status}")
                     
             except concurrent.futures.TimeoutError:
                 print(f"[{completed}/{len(match_data_list)}] {match_data[2]} vs {match_data[3]} - TIMEOUT")
             except Exception as e:
                 print(f"[{completed}/{len(match_data_list)}] {match_data[2]} vs {match_data[3]} - ERROR: {e}")
     
-    print(f"\nCompleted! Total shots collected: {len(all_shots)}")
-    return all_shots, matches
+    print(f"\nCompleted! Total shots: {len(all_shots)}, Total red cards: {len(all_red_cards)}")
+    return all_shots, all_red_cards, matches
 
-def save_shots_to_csv(shots, filename='league_xg_data.csv'):
-    """Save shot data to CSV (thread-safe)"""
+def save_shots_to_csv(shots, filename='shots.csv'):
+    """Save shot data to CSV"""
     if not shots:
         print("No shot data to save")
         return
@@ -633,13 +721,30 @@ def save_shots_to_csv(shots, filename='league_xg_data.csv'):
             
             writer.writeheader()
             for shot in shots:
-                if isinstance(shot, dict):
-                    writer.writerow(shot)
+                writer.writerow(shot)
     
     print(f"Shot data saved to {filename}")
 
-def save_matches_summary_to_csv(matches, filename='league_matches_summary.csv'):
-    """Save match summary (unchanged)"""
+def save_red_cards_to_csv(red_cards, filename='red_cards.csv'):
+    """Save red card data to CSV"""
+    if not red_cards:
+        print("No red card data to save")
+        return
+    
+    with csv_lock:
+        with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
+            fieldnames = ['round', 'match_date', 'home_team', 'away_team', 'match_url', 
+                         'player_name', 'team_name', 'minute']
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            
+            writer.writeheader()
+            for red_card in red_cards:
+                writer.writerow(red_card)
+    
+    print(f"Red card data saved to {filename}")
+
+def save_goals_to_csv(matches, filename='goals.csv'):
+    """Save match results and goals to CSV"""
     if not matches:
         return
     
@@ -669,30 +774,40 @@ def save_matches_summary_to_csv(matches, filename='league_matches_summary.csv'):
                 'away_goals': away_goals,
                 'match_url': match['match_url']
             })
+    
+    print(f"Goals data saved to {filename}")
 
 # Usage
 if __name__ == "__main__":
-    base_url = "https://www.fotmob.com/en-GB/leagues/47/matches/premier-league?season=2024-2025&group=by-round&round=0"
+    base_url = "https://www.fotmob.com/en-GB/leagues/47/matches/premier-league?group=by-round&round=0"
     
-    # Use optimized parallel version
-    # Adjust max_workers based on your system (2-8 is usually good)
-    all_shots, matches = scrape_full_league_xg_parallel(
+    # Use combined data collection (single process per match)
+    all_shots, all_red_cards, matches = scrape_full_league_data_combined(
         base_url, 
-        max_rounds=38, 
-        max_workers=5,  # Reduce if you get blocked
-        season_year=2024
+        max_rounds=1, 
+        max_workers=10,  # Reduced to avoid overwhelming the site
+        season_year=2025
     )
     
+    # Save to separate CSV files
     if all_shots:
-        save_shots_to_csv(all_shots, 'prem_complete_xg_data_fast.csv')
-        
-        matches_processed = len(set(shot['match_url'] for shot in all_shots))
-        rounds_processed = len(set(shot['round'] for shot in all_shots))
-        
-        print(f"\n=== SUMMARY ===")
-        print(f"Rounds processed: {rounds_processed}")
-        print(f"Matches processed: {matches_processed}")
-        print(f"Total shots: {len(all_shots)}")
-        print(f"Data saved to: prem_complete_xg_data_fast.csv")
-    else:
-        print("No data collected")
+        save_shots_to_csv(all_shots, 'shots.csv')
+    
+    if all_red_cards:
+        save_red_cards_to_csv(all_red_cards, 'red_cards.csv')
+    
+    # Goals are already saved in the main function
+    
+    # Print summary
+    matches_processed = len(set(shot['match_url'] for shot in all_shots)) if all_shots else 0
+    rounds_processed = len(set(shot['round'] for shot in all_shots)) if all_shots else 0
+    
+    print(f"\n=== SUMMARY ===")
+    print(f"Rounds processed: {rounds_processed}")
+    print(f"Matches processed: {matches_processed}")
+    print(f"Total shots: {len(all_shots)}")
+    print(f"Total red cards: {len(all_red_cards)}")
+    print(f"Files created:")
+    print(f"  - shots.csv: Shot data with xG/xGOT values")
+    print(f"  - red_cards.csv: Red card incidents")
+    print(f"  - goals.csv: Match results and goals scored")
