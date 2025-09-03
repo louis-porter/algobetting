@@ -9,7 +9,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
-import requests
+import cloudscraper
 from bs4 import BeautifulSoup
 import html
 import re
@@ -38,18 +38,17 @@ class ImprovedMatchDataScraper:
         print(f"Scraping matches played after: {self.cutoff_date.strftime('%Y-%m-%d')}")
         
     def setup_session(self):
-        """Setup requests session with proper headers and retry logic"""
-        self.session = requests.Session()
+        """Setup cloudscraper session with proper headers"""
+        # Create cloudscraper session (automatically handles Cloudflare)
+        self.session = cloudscraper.create_scraper(
+            browser={
+                'browser': 'chrome',
+                'platform': 'windows',
+                'mobile': False
+            }
+        )
         
-        # Rotate through different user agents
-        self.user_agents = [
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:109.0) Gecko/20100101 Firefox/121.0'
-        ]
-        
+        # Additional headers for better stealth
         self.session.headers.update({
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.5',
@@ -61,6 +60,9 @@ class ImprovedMatchDataScraper:
             'Sec-Fetch-Site': 'none',
             'Cache-Control': 'max-age=0'
         })
+        
+        # Set a reasonable delay between requests
+        self.session.request_delay = 2
         
     def setup_driver(self, headless):
         """Setup Selenium driver with anti-detection measures"""
@@ -80,8 +82,8 @@ class ImprovedMatchDataScraper:
         options.add_argument('--no-default-browser-check')
         options.add_argument('--disable-default-apps')
         
-        # Randomize user agent
-        user_agent = random.choice(self.user_agents)
+        # Set user agent to match cloudscraper
+        user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         options.add_argument(f'user-agent={user_agent}')
         
         # Exclude automation flags
@@ -104,18 +106,16 @@ class ImprovedMatchDataScraper:
         time.sleep(delay)
 
     def get_with_retry(self, url, max_retries=3):
-        """Make HTTP request with retry logic and rotating user agents"""
+        """Make HTTP request with retry logic using cloudscraper"""
         for attempt in range(max_retries):
             try:
-                # Rotate user agent
-                self.session.headers['User-Agent'] = random.choice(self.user_agents)
-                
-                # Add random delay
+                # Add random delay between attempts
                 if attempt > 0:
                     delay = (2 ** attempt) + random.uniform(1, 3)
                     print(f"  Retry {attempt + 1} after {delay:.1f}s delay...")
                     time.sleep(delay)
                 
+                # CloudScraper automatically handles Cloudflare challenges
                 response = self.session.get(url, timeout=30)
                 
                 if response.status_code == 403:
@@ -138,7 +138,7 @@ class ImprovedMatchDataScraper:
                 response.raise_for_status()
                 return response
                 
-            except requests.exceptions.RequestException as e:
+            except Exception as e:
                 print(f"  Request failed (attempt {attempt + 1}): {str(e)}")
                 if attempt == max_retries - 1:
                     return None
@@ -146,7 +146,7 @@ class ImprovedMatchDataScraper:
         return None
 
     def get_match_data(self, url):
-        """Get match data using improved request handling"""
+        """Get match data using cloudscraper"""
         print(f"  Fetching: {url}")
         
         response = self.get_with_retry(url)
@@ -302,37 +302,156 @@ class ImprovedMatchDataScraper:
             final_columns = ["Minute", "Team", "Player", "Event Type", "Outcome", "xG", "PSxG"]
             shots_df = shots_df[final_columns]
             
-            # Clean up data
-            shots_df = shots_df[shots_df['Minute'] != ''].copy()
+            # Clean up data - remove empty/invalid rows more thoroughly
+            shots_df = shots_df[
+                (shots_df['Minute'] != '') & 
+                (shots_df['Minute'] != '0') & 
+                (shots_df['Player'] != '0') &
+                (shots_df['Team'] != '0') &
+                (shots_df['Outcome'] != '0') &
+                (shots_df['Player'] != '') &
+                (shots_df['Team'] != '')
+            ].copy()
             
-            # Get red cards data (simplified)
-            red_cards_data = []
-            events = soup.find_all('div', class_=re.compile(r'^event\s'))
+            # Get event data (goals, cards, etc.) with improved team assignment
+            events_data = []
+            processed_events = set()  # Track processed events to avoid duplicates
+            events = soup.find_all('div', class_='event')
+            
+            # Get team lineup info to help with team assignment
+            team_mapping = {}
+            lineups = soup.find_all('div', class_='lineup')
+            if len(lineups) >= 2:
+                # Home team lineup (first)
+                home_lineup = lineups[0]
+                home_players = home_lineup.find_all('a', href=re.compile(r'/en/players/'))
+                for player in home_players:
+                    player_name = player.get_text(strip=True)
+                    team_mapping[player_name] = home_team
+                
+                # Away team lineup (second)  
+                away_lineup = lineups[1]
+                away_players = away_lineup.find_all('a', href=re.compile(r'/en/players/'))
+                for player in away_players:
+                    player_name = player.get_text(strip=True)
+                    team_mapping[player_name] = away_team
+            
             for event in events:
-                event_text = event.get_text().lower()
-                if 'red card' in event_text or 'second yellow' in event_text:
-                    # Extract basic info - this is simplified
-                    player_link = event.find('a')
-                    if player_link:
-                        player_name = player_link.get_text(strip=True)
-                        # Try to extract minute and team
-                        time_match = re.search(r"(\d+)'", event.get_text())
-                        minute = time_match.group(1) if time_match else '90'
+                try:
+                    # Find all event items in this div
+                    event_items = event.find_all('div', recursive=False)
+                    
+                    for item in event_items:
+                        # Look for event icons and extract info
+                        event_icons = item.find_all('div', class_=re.compile(r'event_icon'))
                         
-                        red_cards_data.append({
-                            'Minute': minute,
-                            'Team': 'Unknown',  # Would need more complex logic to determine
-                            'Player': player_name,
-                            'Event Type': 'Red Card',
-                            'Outcome': 'Red Card',
-                            'xG': 0,
-                            'PSxG': 0
-                        })
+                        for icon in event_icons:
+                            icon_class = icon.get('class', [])
+                            
+                            # Determine event type from icon class
+                            event_type = None
+                            outcome = None
+                            
+                            if 'red_card' in icon_class:
+                                event_type = 'Red Card'
+                                outcome = 'Red Card'
+                            elif 'yellow_red_card' in icon_class:
+                                event_type = 'Red Card'  
+                                outcome = 'Second Yellow Card'
+                            elif 'yellow_card' in icon_class:
+                                event_type = 'Yellow Card'
+                                outcome = 'Yellow Card'
+                            elif 'goal' in icon_class:
+                                event_type = 'Goal'
+                                outcome = 'Goal'
+                            elif 'own_goal' in icon_class:
+                                event_type = 'Own Goal'
+                                outcome = 'Own Goal'
+                            
+                            if event_type:
+                                # Extract player and minute from the same div
+                                item_text = item.get_text()
+                                
+                                # Find player link
+                                player_link = item.find('a', href=re.compile(r'/en/players/'))
+                                player_name = player_link.get_text(strip=True) if player_link else 'Unknown'
+                                
+                                # Extract minute - look for patterns like "40'" or "· 44'"
+                                item_text = item.get_text()
+                                print(f"Debug - Processing event text: '{item_text}'")
+                                
+                                # Try multiple patterns for minute extraction (including HTML entities)
+                                minute_patterns = [
+                                    r"·\s*(\d+)(?:&rsquor;|')",  # · 40&rsquor; or · 40' format
+                                    r"\s(\d+)(?:&rsquor;|')",    # space 40&rsquor; or space 40' format
+                                    r"(\d+)(?:&rsquor;|')",      # just 40&rsquor; or 40' format
+                                    r"(\d+)\+?\d*(?:&rsquor;|')", # 90+2&rsquor; format (stoppage time)
+                                ]
+                                
+                                minute = 90  # default
+                                for pattern in minute_patterns:
+                                    minute_match = re.search(pattern, item_text)
+                                    if minute_match:
+                                        minute = int(minute_match.group(1))
+                                        print(f"Debug - Found minute {minute} using pattern '{pattern}'")
+                                        break
+                                
+                                if minute == 90:
+                                    # Fallback: check entire event div
+                                    full_event_text = event.get_text()
+                                    print(f"Debug - Fallback search in: '{full_event_text[:100]}...'")
+                                    for pattern in minute_patterns:
+                                        minute_match = re.search(pattern, full_event_text)
+                                        if minute_match:
+                                            minute = int(minute_match.group(1))
+                                            print(f"Debug - Found minute {minute} in fallback using pattern '{pattern}'")
+                                            break
+                                
+                                # Create unique identifier for this event
+                                event_id = f"{minute}_{player_name}_{event_type}_{outcome}"
+                                
+                                # Skip if we've already processed this exact event
+                                if event_id in processed_events:
+                                    continue
+                                processed_events.add(event_id)
+                                
+                                # Determine team
+                                assigned_team = team_mapping.get(player_name, 'Unknown')
+                                
+                                # If team still unknown, try alternative methods
+                                if assigned_team == 'Unknown':
+                                    # Check if player name appears more in home or away shots
+                                    if not shots_df.empty:
+                                        player_shots = shots_df[shots_df['Player'].str.contains(player_name, case=False, na=False)]
+                                        if not player_shots.empty:
+                                            assigned_team = player_shots['Team'].iloc[0]
+                                
+                                events_data.append({
+                                    'Minute': minute,
+                                    'Team': assigned_team,
+                                    'Player': player_name,
+                                    'Event Type': event_type,
+                                    'Outcome': outcome,
+                                    'xG': 0,
+                                    'PSxG': 0
+                                })
+                                
+                except Exception as e:
+                    print(f"    Error processing event: {str(e)}")
+                    continue
             
-            # Add red cards if any found
-            if red_cards_data:
-                red_cards_df = pd.DataFrame(red_cards_data)
-                shots_df = pd.concat([shots_df, red_cards_df], ignore_index=True)
+            # Add events if any found
+            if events_data:
+                events_df = pd.DataFrame(events_data)
+                
+                # Remove duplicates based on minute, player, and event type
+                events_df = events_df.drop_duplicates(
+                    subset=['Minute', 'Player', 'Event Type', 'Outcome'], 
+                    keep='first'
+                )
+                
+                shots_df = pd.concat([shots_df, events_df], ignore_index=True)
+                print(f"    Added {len(events_df)} additional events (cards/goals) after deduplication")
             
             # Clean and convert data types
             shots_df["Minute"] = pd.to_numeric(shots_df["Minute"], errors='coerce')
@@ -366,6 +485,39 @@ class ImprovedMatchDataScraper:
         except Exception as e:
             print(f"  Error processing shots table: {str(e)}")
             return None
+
+    def test_specific_urls(self, urls):
+        """Test scraping specific match URLs"""
+        print(f"\nTesting {len(urls)} specific URLs...")
+        
+        matches_collected = 0
+        for i, url in enumerate(urls, 1):
+            print(f"\n--- Testing URL {i}/{len(urls)} ---")
+            print(f"URL: {url}")
+            
+            match_df = self.get_match_data(url)
+            if match_df is not None:
+                self.match_data.append(match_df)
+                matches_collected += 1
+                print(f"Success: Collected {len(match_df)} events")
+                
+                # Show sample data
+                if len(match_df) > 0:
+                    print(f"Sample events:")
+                    sample_size = min(5, len(match_df))
+                    for idx, row in match_df.head(sample_size).iterrows():
+                        print(f"   {row['Minute']}' - {row['Team']}: {row['Player']} ({row['Event Type']} - {row['Outcome']})")
+                    if len(match_df) > sample_size:
+                        print(f"   ... and {len(match_df) - sample_size} more events")
+            else:
+                print(f"Failed to collect data")
+            
+            # Add delay between URLs
+            if i < len(urls):
+                self.smart_delay(3, 7)
+        
+        print(f"\nTest Results: {matches_collected}/{len(urls)} URLs successfully scraped")
+        return matches_collected > 0
 
     def scrape_matches(self):
         """Main scraping method with improved error handling"""
@@ -421,7 +573,7 @@ class ImprovedMatchDataScraper:
             
             print(f"Found {len(match_links)} matches within date range")
             
-            # Now process matches using requests
+            # Now process matches using cloudscraper
             matches_collected = 0
             for i, (date_text, url) in enumerate(match_links, 1):
                 print(f"\nProcessing match {i}/{len(match_links)} from {date_text}")
@@ -433,7 +585,7 @@ class ImprovedMatchDataScraper:
                 
                 # Smart delay between matches
                 if i < len(match_links):  # Don't delay after last match
-                    self.smart_delay(8, 15)  # Longer delays to avoid detection
+                    self.smart_delay(5, 12)  # Reduced delays with cloudscraper
             
             print(f"\nProcessed {len(match_links)} matches, collected data for {matches_collected} matches")
             return matches_collected > 0
@@ -485,29 +637,32 @@ class ImprovedMatchDataScraper:
             os.makedirs('data', exist_ok=True)
             filepath = os.path.join('data', filename)
             combined_df.to_csv(filepath, index=False)
-            print(f"\n✓ Results saved to {filepath}")
+            print(f"\nResults saved to {filepath}")
             
             # Save to database
             try:
                 conn = sqlite3.connect(self.db_path)
                 combined_df.to_sql('prem_data', conn, if_exists='append', index=False)
-                print(f"✓ Appended {len(combined_df)} rows to database")
+                print(f"Appended {len(combined_df)} rows to database")
                 conn.close()
             except Exception as e:
-                print(f"✗ Database error: {str(e)}")
+                print(f"Database error: {str(e)}")
                 
-            print(f"\n📊 Total events collected: {len(combined_df)}")
+            print(f"\nTotal events collected: {len(combined_df)}")
             
             # Show summary
-            print(f"📋 Summary:")
+            print(f"Summary:")
             print(f"   - Unique matches: {combined_df.groupby(['home_team', 'away_team', 'match_date']).ngroups}")
             print(f"   - Total shots: {len(combined_df[combined_df['Event Type'] == 'Shot'])}")
             print(f"   - Total penalties: {len(combined_df[combined_df['Event Type'] == 'Penalty'])}")
+            print(f"   - Total goals: {len(combined_df[combined_df['Event Type'] == 'Goal'])}")
+            print(f"   - Total own goals: {len(combined_df[combined_df['Event Type'] == 'Own Goal'])}")
             print(f"   - Red cards: {len(combined_df[combined_df['Event Type'] == 'Red Card'])}")
+            print(f"   - Yellow cards: {len(combined_df[combined_df['Event Type'] == 'Yellow Card'])}")
             
             return True
         else:
-            print("\n⚠ No match data collected")
+            print("\nNo match data collected")
             return False
 
     def cleanup(self):
@@ -517,32 +672,51 @@ class ImprovedMatchDataScraper:
         if hasattr(self, 'session'):
             self.session.close()
             
-    def run(self):
-        """Main run method"""
+    def run(self, test_urls=None):
+        """Main run method with optional URL testing"""
         try:
-            if self.scrape_matches():
-                self.save_results()
+            if test_urls:
+                # Test specific URLs mode
+                if self.test_specific_urls(test_urls):
+                    self.save_results()
+                else:
+                    print("No data was successfully scraped from test URLs")
             else:
-                print("❌ No data was successfully scraped")
+                # Normal scraping mode
+                if self.scrape_matches():
+                    self.save_results()
+                else:
+                    print("No data was successfully scraped")
         except KeyboardInterrupt:
-            print("\n🛑 Scraping interrupted by user")
+            print("\nScraping interrupted by user")
         except Exception as e:
-            print(f"❌ Unexpected error: {str(e)}")
+            print(f"Unexpected error: {str(e)}")
         finally:
             self.cleanup()
-            print("\n🏁 Script completed")
+            print("\nScript completed")
 
 
 if __name__ == "__main__":
     # Configuration
     season = "2024-2025"
-    days_back = 10000  # Reduced from 157 to avoid too many requests
+    days_back = 10000
     db_path = r"C:\Users\Owner\dev\algobetting\infra\data\db\algobetting.db"
+    
+    # Test URLs (optional) - comment out to use normal scraping
+    test_urls = [
+        "https://fbref.com/en/matches/0b39252e/Wolverhampton-Wanderers-Arsenal-January-25-2025-Premier-League",
+        "https://fbref.com/en/matches/ee9ce5e2/North-London-Derby-Arsenal-Tottenham-Hotspur-January-15-2025-Premier-League"
+    ]
     
     scraper = ImprovedMatchDataScraper(
         season=season, 
         days_back=days_back, 
-        headless=True,  # Set to False for debugging
+        headless=True,
         db_path=db_path
     )
-    scraper.run()
+    
+    # To test specific URLs, pass them to run()
+    scraper.run(test_urls=test_urls)
+    
+    # For normal scraping, call run() without parameters
+    # scraper.run()
