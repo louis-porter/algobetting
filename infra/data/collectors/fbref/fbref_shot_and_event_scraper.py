@@ -25,6 +25,55 @@ except ImportError:
     print("  Recommend: pip install lxml")
     DEFAULT_PARSER = 'html.parser'
 
+def extract_division_from_url(url):
+    """
+    Extract division/league from the match URL
+    
+    Args:
+        url (str): FBRef match URL
+    
+    Returns:
+        str: Division/League name
+    """
+    # Common league patterns in FBRef URLs
+    league_patterns = {
+        'Premier-League': 'Premier League',
+        'Championship': 'Championship',
+        'League-One': 'League One',
+        'League-Two': 'League Two',
+        'La-Liga': 'La Liga',
+        'Serie-A': 'Serie A',
+        'Bundesliga': 'Bundesliga',
+        'Ligue-1': 'Ligue 1',
+        'Champions-League': 'Champions League',
+        'Europa-League': 'Europa League',
+        'FA-Cup': 'FA Cup',
+        'EFL-Cup': 'EFL Cup',
+        'World-Cup': 'World Cup'
+    }
+    
+    # Extract from URL pattern
+    for pattern, league_name in league_patterns.items():
+        if pattern in url:
+            return league_name
+    
+    # Fallback: try to extract from URL structure
+    # FBRef URLs often have format: .../matches/id/teams-date-league
+    try:
+        parts = url.split('/')
+        if len(parts) > 5:
+            # Look for league indication in the last part
+            last_part = parts[-1]
+            if 'Premier-League' in last_part:
+                return 'Premier League'
+            elif 'Championship' in last_part:
+                return 'Championship'
+            # Add more patterns as needed
+    except:
+        pass
+    
+    return 'Unknown'
+
 def extract_team_names(soup):
     """
     Extract home and away team names from the scorebox
@@ -67,6 +116,9 @@ def extract_match_events(soup):
     teams = []
     sides = []
 
+    # Get team names for own goal handling and validation
+    home_team, away_team = extract_team_names(soup)
+
     # Extract data for each event
     for event in events:
         # Extract time and score
@@ -92,35 +144,54 @@ def extract_match_events(soup):
                 event_type = specific_classes[0].replace("_", " ").title()
         event_types.append(event_type)
 
-        # Extract team name from logo alt text
-        team_name = ''
+        # Extract team name from logo alt text (this is the player's team)
+        player_team = ''
         logo_img = event.find('img', class_='teamlogo')
         if logo_img:
             alt_text = logo_img.get('alt', '')
-            team_name = alt_text.replace(' Club Crest', '').strip()
-        teams.append(team_name)
+            player_team = alt_text.replace(' Club Crest', '').strip()
         
         # Determine side based on event class
         event_classes = event.get('class', [])
+        side = 'unknown'
+        
         if 'event' in event_classes and len(event_classes) > 1:
-            if 'a' in event_classes[1]:
+            # Check if this is event a or event b
+            # Note: On FBRef, 'a' = away team, 'b' = home team
+            if 'a' in event_classes:
                 side = 'home'
-            elif 'b' in event_classes[1]:
+            elif 'b' in event_classes:
                 side = 'away'
-            else:
-                side = 'unknown'
-        else:
-            side = 'unknown'
+        
+        # For most events, the team is the player's team
+        team_name = player_team
+        
+        # Handle own goals - for own goals, the benefiting team should be the opponent
+        if event_type == 'Own Goal':
+            # For own goals, we need to assign the goal to the OPPONENT team
+            if side == 'away':
+                # Player is from home team, but goal benefits away team
+                team_name = away_team
+                # Keep the side as 'away' because that's who benefits
+                side = 'away'
+            elif side == 'home':
+                # Player is from away team, but goal benefits home team  
+                team_name = home_team
+                # Keep the side as 'home' because that's who benefits
+                side = 'home'
+        
+        
+        teams.append(team_name)
         sides.append(side)
 
-    # Create DataFrame
+    # Create DataFrame with standardized column names
     df = pd.DataFrame({
-        'Time': times,
-        'Score': scores,
-        'Player': players,
-        'Event Type': event_types,
-        'Team': teams,
-        'Side': sides
+        'minute': times,
+        'score': scores,
+        'player': players,
+        'event_type': event_types,
+        'team': teams,
+        'side': sides
     })
 
     return df
@@ -136,6 +207,31 @@ def extract_shots_data(soup, home_team):
     Returns:
         pandas.DataFrame: Shots data
     """
+    def normalize_team_name(name):
+        """Normalize team names for comparison"""
+        # Common team name variations between scorebox and tables
+        name = name.strip()
+        
+        # Remove common suffixes/prefixes
+        replacements = {
+            "Brighton & Hove Albion": "Brighton",
+            "West Ham United": "West Ham",
+            "Wolverhampton Wanderers": "Wolves",
+            "Tottenham Hotspur": "Tottenham",
+            "Nottingham Forest": "Nott'ham Forest",
+            "Manchester United": "Manchester Utd",
+            "Newcastle United": "Newcastle Utd"
+        }
+        
+        # Check both directions
+        for full_name, short_name in replacements.items():
+            if name == full_name:
+                return short_name
+            elif name == short_name:
+                return short_name
+        
+        return name
+    
     table = soup.find_all('table')
     
     if len(table) < 18:
@@ -169,19 +265,45 @@ def extract_shots_data(soup, home_team):
     df = df[available_cols]
     df = df.loc[:, ~df.columns.duplicated(keep='first')]
     
-    if "Squad" in df.columns:
-        df["Side"] = np.where(df["Squad"] == home_team, "home", "away")
+    # Standardize column names to lowercase with underscores
+    column_mapping = {
+        'Minute': 'minute',
+        'Player': 'player',
+        'Squad': 'squad',
+        'xG': 'xg',
+        'PSxG': 'psxg',
+        'Outcome': 'outcome'
+    }
     
-    df = df[df["Minute"] != ""]
+    # Rename columns that exist
+    for old_name, new_name in column_mapping.items():
+        if old_name in df.columns:
+            df = df.rename(columns={old_name: new_name})
+    
+    if "squad" in df.columns:
+        # Normalize team names for comparison
+        normalized_home_team = normalize_team_name(home_team)
+        df["normalized_squad"] = df["squad"].apply(normalize_team_name)
+        
+        df["side"] = np.where(df["normalized_squad"] == normalized_home_team, "home", "away")
+        
+        # Drop the helper column
+        df = df.drop("normalized_squad", axis=1)
+        
+        # Rename squad to team for consistency
+        df = df.rename(columns={"squad": "team"})
+    
+    df = df[df["minute"] != ""]
 
     return df
 
-def scrape_match_data(url):
+def scrape_match_data(url, season=None):
     """
     Main function to scrape match data and return events and shots DataFrames
     
     Args:
         url (str): FBRef match URL
+        season (str): Season string (e.g., "2024-2025")
     
     Returns:
         tuple: (match_events_df, shots_df)
@@ -212,11 +334,22 @@ def scrape_match_data(url):
         # Extract team names
         home_team, away_team = extract_team_names(soup)
         
+        # Extract division from URL
+        division = extract_division_from_url(url)
+        
         # Get match events
         match_events = extract_match_events(soup)
+        if not match_events.empty:
+            match_events['division'] = division
+            if season:
+                match_events['season'] = season
         
         # Get shots data
         shots = extract_shots_data(soup, home_team)
+        if not shots.empty:
+            shots['division'] = division
+            if season:
+                shots['season'] = season
         
         return match_events, shots
         
@@ -383,7 +516,7 @@ class MatchDataScraper:
                 print(f"\nProcessing match {i}/{len(match_links)} from {date_text}")
                 print(f"  URL: {url}")
                 
-                match_events, shots = scrape_match_data(url)
+                match_events, shots = scrape_match_data(url, self.season)
                 
                 if not match_events.empty or not shots.empty:
                     if not match_events.empty:
@@ -398,6 +531,10 @@ class MatchDataScraper:
                     
                     matches_collected += 1
                     print(f"  Collected {len(match_events)} events and {len(shots)} shots")
+                    
+                    # Print division info
+                    division = extract_division_from_url(url)
+                    print(f"  Division: {division}")
                 else:
                     print(f"  No data collected")
                 
@@ -421,7 +558,7 @@ class MatchDataScraper:
             print(f"\n--- Testing URL {i}/{len(urls)} ---")
             print(f"URL: {url}")
             
-            match_events, shots = scrape_match_data(url)
+            match_events, shots = scrape_match_data(url, self.season)
             
             if not match_events.empty or not shots.empty:
                 if not match_events.empty:
@@ -434,6 +571,10 @@ class MatchDataScraper:
                 
                 matches_collected += 1
                 print(f"Successfully collected {len(match_events)} events and {len(shots)} shots")
+                
+                # Print division info
+                division = extract_division_from_url(url)
+                print(f"Division: {division}")
             else:
                 print(f"Failed to collect data")
             
@@ -463,16 +604,30 @@ class MatchDataScraper:
             print(f"Total events: {len(events_df)}")
             
             # Show events summary
-            if 'Event Type' in events_df.columns:
-                event_summary = events_df['Event Type'].value_counts()
+            if 'event_type' in events_df.columns:
+                event_summary = events_df['event_type'].value_counts()
                 print("Events Summary:")
                 for event_type, count in event_summary.items():
                     print(f"   - {event_type}: {count}")
             
+            # Show division breakdown
+            if 'division' in events_df.columns:
+                division_summary = events_df['division'].value_counts()
+                print("Division Summary (Events):")
+                for division, count in division_summary.items():
+                    print(f"   - {division}: {count}")
+            
+            # Show season breakdown
+            if 'season' in events_df.columns:
+                season_summary = events_df['season'].value_counts()
+                print("Season Summary (Events):")
+                for season, count in season_summary.items():
+                    print(f"   - {season}: {count}")
+            
             # Save events to database
             try:
                 conn = sqlite3.connect(self.db_path)
-                events_df.to_sql('match_events', conn, if_exists='append', index=False)
+                events_df.to_sql('fbref_match_events', conn, if_exists='append', index=False)
                 print(f"Appended {len(events_df)} events to database")
                 conn.close()
             except Exception as e:
@@ -491,16 +646,30 @@ class MatchDataScraper:
             print(f"Total shots: {len(shots_df)}")
             
             # Show shots summary
-            if 'Outcome' in shots_df.columns:
-                shots_summary = shots_df['Outcome'].value_counts()
+            if 'outcome' in shots_df.columns:
+                shots_summary = shots_df['outcome'].value_counts()
                 print("Shots Summary:")
                 for outcome, count in shots_summary.items():
                     print(f"   - {outcome}: {count}")
             
+            # Show division breakdown
+            if 'division' in shots_df.columns:
+                division_summary = shots_df['division'].value_counts()
+                print("Division Summary (Shots):")
+                for division, count in division_summary.items():
+                    print(f"   - {division}: {count}")
+            
+            # Show season breakdown
+            if 'season' in shots_df.columns:
+                season_summary = shots_df['season'].value_counts()
+                print("Season Summary (Shots):")
+                for season, count in season_summary.items():
+                    print(f"   - {season}: {count}")
+            
             # Save shots to database
             try:
                 conn = sqlite3.connect(self.db_path)
-                shots_df.to_sql('match_shots', conn, if_exists='append', index=False)
+                shots_df.to_sql('fbref_match_shots', conn, if_exists='append', index=False)
                 print(f"Appended {len(shots_df)} shots to database")
                 conn.close()
             except Exception as e:
@@ -547,14 +716,15 @@ class MatchDataScraper:
 
 if __name__ == "__main__":
     # Configuration
-    season = "2023-2024"
+    season = "2024-2025"
     days_back = 10000
     db_path = r"C:\Users\Owner\dev\algobetting\infra\data\db\algobetting.db"
     
     # Test URLs
     test_urls = [
         "https://fbref.com/en/matches/e4bb1c35/Tottenham-Hotspur-Brighton-and-Hove-Albion-May-25-2025-Premier-League",
-        "https://fbref.com/en/matches/ee9ce5e2/North-London-Derby-Arsenal-Tottenham-Hotspur-January-15-2025-Premier-League"
+        "https://fbref.com/en/matches/ee9ce5e2/North-London-Derby-Arsenal-Tottenham-Hotspur-January-15-2025-Premier-League",
+        "https://fbref.com/en/matches/157740ee/Chelsea-Liverpool-May-4-2025-Premier-League,2025-05-04"
     ]
     
     scraper = MatchDataScraper(
@@ -565,7 +735,8 @@ if __name__ == "__main__":
     )
     
     # To test specific URLs
-    scraper.run(test_urls=test_urls)
+    #scraper.run(test_urls=test_urls)
     
     # For normal scraping
-    # scraper.run()
+    scraper.run()
+
