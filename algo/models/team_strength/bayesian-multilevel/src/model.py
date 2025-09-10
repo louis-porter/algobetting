@@ -393,7 +393,8 @@ def run_full_analysis(train_df, teams, n_teams, season, league,
     results['validation'] = validation_results
     
     print(f"\nSaving trace for future use...")
-    save_season_trace(trace, current_season, league, model_version)
+    team_names = list(team_mapping.keys())  # or however you get the ordered team names
+    save_season_trace(trace, current_season, league, team_names, model_version)
     
     print("\n" + "=" * 80)
     print("ANALYSIS COMPLETE!")
