@@ -5,23 +5,33 @@ import arviz as az
 from src.trace_save_load import load_previous_season_trace, extract_previous_season_priors, save_season_trace
 
 def build_and_sample_model(train_df, n_teams, current_season=None, league=None, 
-                          trace=5000, tune=2500, team_mapping=None, model_version="v1"):
-    """Build and sample the football model with automatic previous season priors"""
+                          trace=5000, tune=2500, team_mapping=None, model_version="v1",
+                          use_previous_season_priors=True):  # New parameter
+    """Build and sample the football model with automatic previous season priors
+    
+    Parameters:
+    -----------
+    use_previous_season_priors : bool, default=True
+        If True, attempts to load and use previous season priors.
+        If False, uses default priors even if previous season data exists.
+    """
     
     home_idx = train_df['home_idx'].values
     away_idx = train_df['away_idx'].values
     home_goals_obs = train_df['home_goals'].values
     away_goals_obs = train_df['away_goals'].values
     
-    # Always try to load previous season priors if season info is provided
+    # Only try to load previous season priors if enabled
     priors = None
-    if current_season is not None and league is not None and team_mapping is not None:
+    if use_previous_season_priors and current_season is not None and league is not None and team_mapping is not None:
         previous_trace = load_previous_season_trace(current_season, league, model_version)
         if previous_trace is not None:
             priors = extract_previous_season_priors(previous_trace, team_mapping)
             print(f"  ✓ Loaded priors from {current_season-1} season")
         else:
             print(f"  ✗ No previous season trace found for {current_season-1}")
+    elif not use_previous_season_priors:
+        print("  → Previous season priors disabled")
     
     with pm.Model() as model:
         if priors is None:
@@ -41,27 +51,22 @@ def build_and_sample_model(train_df, n_teams, current_season=None, league=None,
                                   sigma=priors['def_prior_sigma'], 
                                   shape=n_teams)
         
-        # Center the team strengths
+        # Rest of the model remains the same...
         att_str = pm.Deterministic("att_str", att_str_raw - pm.math.mean(att_str_raw))
         def_str = pm.Deterministic("def_str", def_str_raw - pm.math.mean(def_str_raw))
         
-        # Other model components
-        #home_adv = pm.Normal("home_adv", mu=0.15, sigma=0.15)
-        #baseline = pm.Normal("baseline", mu=0, sigma=1)
-        home_adv = pm.Flat("home_adv")
-        baseline = pm.Flat("baseline")
+        home_adv = pm.Normal("home_adv", mu=0.25, sigma=0.2)
+        baseline = pm.Normal("baseline", mu=0.37, sigma=0.3)
 
         home_goals_mu = pm.math.exp(baseline + att_str[home_idx] + def_str[away_idx] + home_adv)
         away_goals_mu = pm.math.exp(baseline + att_str[away_idx] + def_str[home_idx])
 
-        # Weighted likelihood
         weights = pm.ConstantData("weights", train_df["weight"].values)
         home_logp = pm.logp(pm.Poisson.dist(mu=home_goals_mu), home_goals_obs)
         away_logp = pm.logp(pm.Poisson.dist(mu=away_goals_mu), away_goals_obs)
         pm.Potential("weighted_home_goals", pm.math.sum(weights * home_logp))
         pm.Potential("weighted_away_goals", pm.math.sum(weights * away_logp))
 
-        # Sample
         trace = pm.sample(trace=trace, tune=tune, cores=4, nuts_sampler='blackjax', 
                          return_inferencedata=True, progressbar=False)
     
@@ -261,7 +266,8 @@ def analyze_model_results(trace, teams):
         "def_str_raw", 
         "att_str",     
         "def_str",            
-        "home_adv"
+        "home_adv",
+        "baseline"
     ])
     
     # Get key parameter estimates
@@ -320,7 +326,7 @@ def analyze_model_results(trace, teams):
 
 def run_full_analysis(train_df, teams, n_teams, season, league, 
                      team_mapping=None, trace_samples=5000, tune_samples=2500, 
-                     model_version="v1"):
+                     model_version="v1", use_previous_season_priors=True):
     """
     Run complete model fitting and analysis - always saves, auto-loads priors when available
     
@@ -375,7 +381,8 @@ def run_full_analysis(train_df, teams, n_teams, season, league,
         trace=trace_samples, 
         tune=tune_samples,
         team_mapping=team_mapping,
-        model_version=model_version
+        model_version=model_version,
+        use_previous_season_priors=use_previous_season_priors
     )
     
     print("\nAnalyzing results...")
