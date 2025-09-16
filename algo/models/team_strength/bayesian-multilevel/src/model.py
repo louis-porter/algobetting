@@ -2,18 +2,25 @@ import pymc as pm
 import numpy as np
 import pandas as pd
 import arviz as az
-from src.trace_save_load import load_previous_season_trace, extract_previous_season_priors, save_season_trace
+from src.trace_save_load import save_season_trace
 
 def build_and_sample_model(train_df, n_teams, current_season=None, league=None, 
                           trace=5000, tune=2500, team_mapping=None, model_version="v1",
-                          use_previous_season_priors=True):  # New parameter
-    """Build and sample the football model with automatic previous season priors
+                          custom_priors=None):
+    """Build and sample the football model with optional custom priors from dict
     
     Parameters:
     -----------
-    use_previous_season_priors : bool, default=True
-        If True, attempts to load and use previous season priors.
-        If False, uses default priors even if previous season data exists.
+    custom_priors : dict, optional
+        Dictionary with custom prior specifications:
+        {
+            'team_name': {
+                'attack_mu': float,     # Prior mean for attack strength
+                'attack_sigma': float,  # Prior std for attack strength  
+                'defense_mu': float,    # Prior mean for defense strength
+                'defense_sigma': float  # Prior std for defense strength
+            }
+        }
     """
     
     home_idx = train_df['home_idx'].values
@@ -21,56 +28,79 @@ def build_and_sample_model(train_df, n_teams, current_season=None, league=None,
     home_goals_obs = train_df['home_goals'].values
     away_goals_obs = train_df['away_goals'].values
     
-    # Only try to load previous season priors if enabled
-    priors = None
-    if use_previous_season_priors and current_season is not None and league is not None and team_mapping is not None:
-        previous_trace = load_previous_season_trace(current_season, league, model_version)
-        if previous_trace is not None:
-            priors = extract_previous_season_priors(previous_trace, team_mapping)
-            print(f"  ✓ Loaded priors from {current_season-1} season")
-        else:
-            print(f"  ✗ No previous season trace found for {current_season-1}")
-    elif not use_previous_season_priors:
-        print("  → Previous season priors disabled")
+    # Convert custom priors to arrays
+    if custom_priors is not None and team_mapping is not None:
+        print(f"  → Using custom priors for {len(custom_priors)} teams")
+        att_prior_mu, att_prior_sigma, def_prior_mu, def_prior_sigma = convert_priors_dict_to_arrays(
+            custom_priors, team_mapping, n_teams
+        )
+    else:
+        print("  → Using default priors (no prior information)")
+        att_prior_mu = np.zeros(n_teams)
+        att_prior_sigma = np.ones(n_teams)
+        def_prior_mu = np.zeros(n_teams)
+        def_prior_sigma = np.ones(n_teams)
     
     with pm.Model() as model:
-        if priors is None:
-            # Default priors - no previous season information
-            print("  → Using default priors (no previous season data)")
-            att_str_raw = pm.Normal("att_str_raw", mu=0, sigma=1, shape=n_teams)
-            def_str_raw = pm.Normal("def_str_raw", mu=0, sigma=1, shape=n_teams)
-        else:
-            # Use previous season as priors
-            print("  → Using previous season team strengths as priors")
-            att_str_raw = pm.Normal("att_str_raw", 
-                                  mu=priors['att_prior_mu'], 
-                                  sigma=priors['att_prior_sigma'], 
-                                  shape=n_teams)
-            def_str_raw = pm.Normal("def_str_raw", 
-                                  mu=priors['def_prior_mu'], 
-                                  sigma=priors['def_prior_sigma'], 
-                                  shape=n_teams)
+        # Team strength priors
+        att_str_raw = pm.Normal("att_str_raw", mu=att_prior_mu, sigma=att_prior_sigma, shape=n_teams)
+        def_str_raw = pm.Normal("def_str_raw", mu=def_prior_mu, sigma=def_prior_sigma, shape=n_teams)
         
-        # Rest of the model remains the same...
+        # Apply sum-to-zero constraints
         att_str = pm.Deterministic("att_str", att_str_raw - pm.math.mean(att_str_raw))
         def_str = pm.Deterministic("def_str", def_str_raw - pm.math.mean(def_str_raw))
         
+        # Other model parameters
         home_adv = pm.Normal("home_adv", mu=0.25, sigma=0.2)
         baseline = pm.Normal("baseline", mu=0.37, sigma=0.3)
 
+        # Expected goals
         home_goals_mu = pm.math.exp(baseline + att_str[home_idx] + def_str[away_idx] + home_adv)
         away_goals_mu = pm.math.exp(baseline + att_str[away_idx] + def_str[home_idx])
 
+        # Weighted likelihood
         weights = pm.ConstantData("weights", train_df["weight"].values)
         home_logp = pm.logp(pm.Poisson.dist(mu=home_goals_mu), home_goals_obs)
         away_logp = pm.logp(pm.Poisson.dist(mu=away_goals_mu), away_goals_obs)
         pm.Potential("weighted_home_goals", pm.math.sum(weights * home_logp))
         pm.Potential("weighted_away_goals", pm.math.sum(weights * away_logp))
 
+        # Sample
         trace = pm.sample(trace=trace, tune=tune, cores=4, nuts_sampler='blackjax', 
                          return_inferencedata=True, progressbar=False)
     
     return model, trace
+
+
+def convert_priors_dict_to_arrays(custom_priors, team_mapping, n_teams):
+    """Convert custom priors dict to arrays for PyMC model"""
+    
+    # Initialize arrays with default values
+    att_prior_mu = np.zeros(n_teams)
+    att_prior_sigma = np.ones(n_teams)
+    def_prior_mu = np.zeros(n_teams)
+    def_prior_sigma = np.ones(n_teams)
+    
+    # Fill in custom priors where specified
+    for team_name, priors in custom_priors.items():
+        if team_name in team_mapping:
+            idx = team_mapping[team_name]
+            
+            # Attack priors
+            if 'attack_mu' in priors:
+                att_prior_mu[idx] = priors['attack_mu']
+            if 'attack_sigma' in priors:
+                att_prior_sigma[idx] = priors['attack_sigma']
+                
+            # Defense priors  
+            if 'defense_mu' in priors:
+                def_prior_mu[idx] = priors['defense_mu']
+            if 'defense_sigma' in priors:
+                def_prior_sigma[idx] = priors['defense_sigma']
+        else:
+            print(f"Warning: Team '{team_name}' not found in team_mapping")
+    
+    return att_prior_mu, att_prior_sigma, def_prior_mu, def_prior_sigma
 
 
 def convert_to_expected_goals_constrained(att_summary, def_summary, baseline, home_adv, teams):
@@ -326,31 +356,14 @@ def analyze_model_results(trace, teams):
 
 def run_full_analysis(train_df, teams, n_teams, season, league, 
                      team_mapping=None, trace_samples=5000, tune_samples=2500, 
-                     model_version="v1", use_previous_season_priors=True):
+                     model_version="v1", custom_priors=None):
     """
-    Run complete model fitting and analysis - always saves, auto-loads priors when available
+    Run complete model fitting and analysis with custom priors from dict
     
     Parameters:
     -----------
-    train_df : pd.DataFrame
-        Training data with columns: home_idx, away_idx, home_goals, away_goals, weight
-    teams : list
-        List of team names
-    n_teams : int
-        Number of teams
-    season : str or int
-        Season identifier (e.g., "2023-24" or 2024)
-    league : str
-        League identifier (e.g., "premier_league")
-    team_mapping : dict, optional
-        Mapping from team names to current season indices: {team_name: current_idx}
-        If None, priors won't be loaded
-    trace_samples : int
-        Number of MCMC samples
-    tune_samples : int
-        Number of tuning samples
-    model_version : str
-        Model version for trace organization
+    custom_priors : dict, optional
+        Custom team prior specifications as dictionary
         
     Returns:
     --------
@@ -372,6 +385,9 @@ def run_full_analysis(train_df, teams, n_teams, season, league,
     print(f"Model version: {model_version}")
     print(f"Samples: {trace_samples} (tune: {tune_samples})")
     
+    if custom_priors:
+        print(f"Custom priors specified for {len(custom_priors)} teams")
+    
     print("\nBuilding and sampling model...")
     model, trace = build_and_sample_model(
         train_df=train_df, 
@@ -382,7 +398,7 @@ def run_full_analysis(train_df, teams, n_teams, season, league,
         tune=tune_samples,
         team_mapping=team_mapping,
         model_version=model_version,
-        use_previous_season_priors=use_previous_season_priors
+        custom_priors=custom_priors
     )
     
     print("\nAnalyzing results...")
@@ -393,8 +409,9 @@ def run_full_analysis(train_df, teams, n_teams, season, league,
     results['validation'] = validation_results
     
     print(f"\nSaving trace for future use...")
-    team_names = list(team_mapping.keys())  # or however you get the ordered team names
-    save_season_trace(trace, current_season, league, team_names, model_version)
+    if team_mapping:
+        team_names = list(team_mapping.keys())
+        save_season_trace(trace, current_season, league, team_names, model_version)
     
     print("\n" + "=" * 80)
     print("ANALYSIS COMPLETE!")
