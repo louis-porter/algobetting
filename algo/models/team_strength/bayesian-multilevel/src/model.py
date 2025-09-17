@@ -6,7 +6,7 @@ from src.trace_save_load import save_season_trace
 
 def build_and_sample_model(train_df, n_teams, 
                           trace=5000, tune=2500):
-    """Build and sample the football model with league-specific parameters"""
+    """Build and sample the football model with league strength adjustment"""
     
     home_idx = train_df['home_idx'].values
     away_idx = train_df['away_idx'].values
@@ -22,23 +22,23 @@ def build_and_sample_model(train_df, n_teams,
         def_str_raw = pm.Normal("def_str_raw", mu=0, sigma=1, shape=n_teams)
         
         # Apply sum-to-zero constraints
-        att_str = att_str_raw#pm.Deterministic("att_str", att_str_raw - pm.math.mean(att_str_raw))
-        def_str = def_str_raw#pm.Deterministic("def_str", def_str_raw - pm.math.mean(def_str_raw))
+        att_str = pm.Deterministic("att_str", att_str_raw - pm.math.mean(att_str_raw))
+        def_str = pm.Deterministic("def_str", def_str_raw - pm.math.mean(def_str_raw))
         
-        # League-specific parameters
-        baseline_prem = pm.Normal("baseline_prem", mu=0.37, sigma=0.3)
-        baseline_champ = pm.Normal("baseline_champ", mu=0.15, sigma=0.3)  # Prior: lower scoring
+        # Other model parameters
+        home_adv = pm.Normal("home_adv", mu=0.25, sigma=0.2)
+        baseline = pm.Normal("baseline", mu=0.37, sigma=0.3)
+
+        # League strength adjustment (Championship penalty = log(0.8))
+        champ_penalty = np.log(0.8)
         
-        home_adv_prem = pm.Normal("home_adv_prem", mu=0.25, sigma=0.2)
-        home_adv_champ = pm.Normal("home_adv_champ", mu=0.20, sigma=0.2)  # Prior: slightly less home adv
+        # Adjust baseline for Championship games
+        home_baseline = baseline + champ_penalty * (1 - is_prem)
+        away_baseline = baseline + champ_penalty * (1 - is_prem)
 
-        # Select parameters based on league
-        baseline = baseline_prem * is_prem + baseline_champ * (1 - is_prem)
-        home_adv = home_adv_prem * is_prem + home_adv_champ * (1 - is_prem)
-
-        # Expected goals
-        home_goals_mu = pm.math.exp(baseline + att_str[home_idx] + def_str[away_idx] + home_adv)
-        away_goals_mu = pm.math.exp(baseline + att_str[away_idx] + def_str[home_idx])
+        # Expected goals with league adjustment
+        home_goals_mu = pm.math.exp(home_baseline + att_str[home_idx] + def_str[away_idx] + home_adv)
+        away_goals_mu = pm.math.exp(away_baseline + att_str[away_idx] + def_str[home_idx])
 
         # Weighted likelihood
         weights = pm.ConstantData("weights", train_df["weight"].values)
