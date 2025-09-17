@@ -4,55 +4,37 @@ import pandas as pd
 import arviz as az
 from src.trace_save_load import save_season_trace
 
-def build_and_sample_model(train_df, n_teams, current_season=None, league=None, 
-                          trace=5000, tune=2500, team_mapping=None, model_version="v1",
-                          custom_priors=None):
-    """Build and sample the football model with optional custom priors from dict
-    
-    Parameters:
-    -----------
-    custom_priors : dict, optional
-        Dictionary with custom prior specifications:
-        {
-            'team_name': {
-                'attack_mu': float,     # Prior mean for attack strength
-                'attack_sigma': float,  # Prior std for attack strength  
-                'defense_mu': float,    # Prior mean for defense strength
-                'defense_sigma': float  # Prior std for defense strength
-            }
-        }
-    """
+def build_and_sample_model(train_df, n_teams, 
+                          trace=5000, tune=2500):
+    """Build and sample the football model with league-specific parameters"""
     
     home_idx = train_df['home_idx'].values
     away_idx = train_df['away_idx'].values
     home_goals_obs = train_df['home_goals'].values
     away_goals_obs = train_df['away_goals'].values
     
-    # Convert custom priors to arrays
-    if custom_priors is not None and team_mapping is not None:
-        print(f"  → Using custom priors for {len(custom_priors)} teams")
-        att_prior_mu, att_prior_sigma, def_prior_mu, def_prior_sigma = convert_priors_dict_to_arrays(
-            custom_priors, team_mapping, n_teams
-        )
-    else:
-        print("  → Using default priors (no prior information)")
-        att_prior_mu = np.zeros(n_teams)
-        att_prior_sigma = np.ones(n_teams)
-        def_prior_mu = np.zeros(n_teams)
-        def_prior_sigma = np.ones(n_teams)
+    # League indicators (1=Premier League, 0=Championship)
+    is_prem = (train_df['league_id'] == 'Premier_League').astype(float).values
     
     with pm.Model() as model:
         # Team strength priors
-        att_str_raw = pm.Normal("att_str_raw", mu=att_prior_mu, sigma=att_prior_sigma, shape=n_teams)
-        def_str_raw = pm.Normal("def_str_raw", mu=def_prior_mu, sigma=def_prior_sigma, shape=n_teams)
+        att_str_raw = pm.Normal("att_str_raw", mu=0, sigma=1, shape=n_teams)
+        def_str_raw = pm.Normal("def_str_raw", mu=0, sigma=1, shape=n_teams)
         
         # Apply sum-to-zero constraints
-        att_str = pm.Deterministic("att_str", att_str_raw - pm.math.mean(att_str_raw))
-        def_str = pm.Deterministic("def_str", def_str_raw - pm.math.mean(def_str_raw))
+        att_str = att_str_raw#pm.Deterministic("att_str", att_str_raw - pm.math.mean(att_str_raw))
+        def_str = def_str_raw#pm.Deterministic("def_str", def_str_raw - pm.math.mean(def_str_raw))
         
-        # Other model parameters
-        home_adv = pm.Normal("home_adv", mu=0.25, sigma=0.2)
-        baseline = pm.Normal("baseline", mu=0.37, sigma=0.3)
+        # League-specific parameters
+        baseline_prem = pm.Normal("baseline_prem", mu=0.37, sigma=0.3)
+        baseline_champ = pm.Normal("baseline_champ", mu=0.15, sigma=0.3)  # Prior: lower scoring
+        
+        home_adv_prem = pm.Normal("home_adv_prem", mu=0.25, sigma=0.2)
+        home_adv_champ = pm.Normal("home_adv_champ", mu=0.20, sigma=0.2)  # Prior: slightly less home adv
+
+        # Select parameters based on league
+        baseline = baseline_prem * is_prem + baseline_champ * (1 - is_prem)
+        home_adv = home_adv_prem * is_prem + home_adv_champ * (1 - is_prem)
 
         # Expected goals
         home_goals_mu = pm.math.exp(baseline + att_str[home_idx] + def_str[away_idx] + home_adv)
@@ -152,7 +134,10 @@ def validate_model_predictions(trace, teams, train_df, n_simulations=1000):
     print("=" * 60)
     
     # Get observed statistics from training data
-    train_df = train_df[train_df["is_actual"] == True]
+    train_df = train_df[
+        (train_df["is_actual"] == True) & 
+        (train_df["league_id"] == "Premier League") 
+    ]
     observed_total_goals = train_df['home_goals'].sum() + train_df['away_goals'].sum()
     observed_matches = len(train_df)
     observed_goals_per_match = observed_total_goals / observed_matches
@@ -354,7 +339,7 @@ def analyze_model_results(trace, teams):
     }
 
 
-def run_full_analysis(train_df, teams, n_teams, season, league, 
+def run_full_analysis(train_df, teams, n_teams, season, 
                      team_mapping=None, trace_samples=5000, tune_samples=2500, 
                      model_version="v1", custom_priors=None):
     """
@@ -376,11 +361,7 @@ def run_full_analysis(train_df, teams, n_teams, season, league,
     else:
         current_season = season
     
-    print("=" * 80)
-    print(f"FOOTBALL MODEL ANALYSIS - {league.upper()} {season}")
-    print("=" * 80)
     print(f"Season: {current_season}")
-    print(f"League: {league}")
     print(f"Teams: {n_teams}")
     print(f"Model version: {model_version}")
     print(f"Samples: {trace_samples} (tune: {tune_samples})")
@@ -392,13 +373,8 @@ def run_full_analysis(train_df, teams, n_teams, season, league,
     model, trace = build_and_sample_model(
         train_df=train_df, 
         n_teams=n_teams, 
-        current_season=current_season,
-        league=league,
         trace=trace_samples, 
-        tune=tune_samples,
-        team_mapping=team_mapping,
-        model_version=model_version,
-        custom_priors=custom_priors
+        tune=tune_samples
     )
     
     print("\nAnalyzing results...")

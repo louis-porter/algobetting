@@ -7,9 +7,9 @@ import numpy as np
 import sqlite3
 from scipy.stats import poisson
 from itertools import product
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional, Union
 
-def load_football_data(db_path: str, league: str, season: str) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def load_football_data(db_path: str, league: Union[str, List[str]], match_date: str) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
     Load match, shot, and red card data from SQLite database
     
@@ -27,6 +27,13 @@ def load_football_data(db_path: str, league: str, season: str) -> Tuple[pd.DataF
     match_df, shot_df, red_df : tuple of DataFrames
     """
     conn = sqlite3.connect(db_path)
+
+    if isinstance(league, str):
+        leagues = [league]
+    else:
+        leagues = league
+
+    league_placeholders = ','.join(['?' for _ in leagues])
     
     # Load match data
     match_df = pd.read_sql_query(f"""
@@ -43,9 +50,9 @@ def load_football_data(db_path: str, league: str, season: str) -> Tuple[pd.DataF
             JOIN fotmob_team_id_mapping home ON home.team_id = fmd.home_team
             JOIN fotmob_team_id_mapping away ON away.team_id = fmd.away_team
         WHERE
-            league_id = '{league}'
-            AND season = '{season}'
-    """, conn)
+            league_id IN ({league_placeholders})
+            AND match_date > ?
+    """, conn, params=leagues + [match_date])
     
     # Load shot data
     shot_df = pd.read_sql_query(f"""
@@ -61,9 +68,9 @@ def load_football_data(db_path: str, league: str, season: str) -> Tuple[pd.DataF
         FROM fotmob_shot_data fsd
             JOIN fotmob_team_id_mapping team ON team.team_id = fsd.team_id
         WHERE
-            league_id = '{league}'
-            AND season = '{season}'
-    """, conn)
+            league_id IN ({league_placeholders})
+            AND match_date > ?
+    """, conn, params=leagues + [match_date])
     
     # Load red card data
     red_df = pd.read_sql_query(f"""
@@ -79,9 +86,9 @@ def load_football_data(db_path: str, league: str, season: str) -> Tuple[pd.DataF
         FROM fotmob_red_card_data frcd
             JOIN fotmob_team_id_mapping team ON team.team_id = frcd.team_id
         WHERE
-            league_id = '{league}'
-            AND season = '{season}'
-    """, conn)
+            league_id IN ({league_placeholders})
+            AND match_date > ?
+    """, conn, params=leagues + [match_date])
     
     conn.close()
     
@@ -312,6 +319,7 @@ def create_weighted_scoreline_data(match_df: pd.DataFrame,
                 
                 match_scorelines.append({
                     'match_id': match_id,
+                    'league_id': row['league_id'],
                     'match_date': row['match_date'],
                     'home_team': row['home_team'],
                     'away_team': row['away_team'],
@@ -367,6 +375,7 @@ def create_weighted_scoreline_data(match_df: pd.DataFrame,
             
             current_match_data.append({
                 'match_id': scoreline['match_id'],
+                'league_id': row['league_id'],
                 'match_date': scoreline['match_date'].date(),
                 'home_team': scoreline['home_team'],
                 'away_team': scoreline['away_team'],
@@ -421,7 +430,7 @@ def prepare_model_data(df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, int], 
     return df, team_mapping, n_teams
 
 # Convenience function that combines everything
-def load_and_process_data(db_path: str, league: str, season: str, 
+def load_and_process_data(db_path: str, league: Union[str, List[str]], match_date: str,
                          **scoreline_kwargs) -> Tuple[pd.DataFrame, Dict[str, int], int]:
     """
     Complete pipeline: load raw data, create weighted scorelines, prepare for modeling
@@ -444,7 +453,7 @@ def load_and_process_data(db_path: str, league: str, season: str,
     n_teams : number of teams
     """
     # Load raw data
-    match_df, shot_df, red_df = load_football_data(db_path, league, season)
+    match_df, shot_df, red_df = load_football_data(db_path, league, match_date)
     
     # Create weighted scoreline data
     weighted_df = create_weighted_scoreline_data(
