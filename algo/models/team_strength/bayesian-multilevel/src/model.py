@@ -26,13 +26,16 @@ def build_and_sample_model(train_df, n_teams, trace=5000, tune=2500):
         
         # League difficulty multipliers [Championship=0, Premier League=1]
         # Championship ~10% easier: goals worth less for attack rating, defenses get slight credit
-        league_att_difficulty = pm.Normal("league_att_difficulty", 
-                                         mu=[0.8, 1.0],      # Championship attacks worth 0%
-                                         sigma=0.1, shape=2)
-        league_def_difficulty = pm.Normal("league_def_difficulty", 
-                                         mu=[0.8, 1.0],      # Championship defenses get 10% credit
-                                         sigma=0.1, shape=2)
-        
+        #league_att_difficulty = pm.Normal("league_att_difficulty", 
+        #                                 mu=[0.8, 1.0],      # Championship attacks worth 0%
+        #                                 sigma=0.1, shape=2)
+        #league_def_difficulty = pm.Normal("league_def_difficulty", 
+        #                                 mu=[1.2, 1.0],      # Championship defenses get 10% credit
+        #                                 sigma=0.1, shape=2)
+
+        league_att_difficulty = pm.math.constant([1.5, 1]) 
+        league_def_difficulty = pm.math.constant([1.5, 1]) 
+
         # Other model parameters
         home_adv = pm.Normal("home_adv", mu=0.25, sigma=0.2)
         baseline = pm.Normal("baseline", mu=0.37, sigma=0.3)
@@ -294,8 +297,8 @@ def analyze_model_results(trace, teams):
         "def_str",            
         "home_adv",
         "baseline",
-        "league_att_difficulty",
-        "league_def_difficulty"
+        #"league_att_difficulty",
+        #"league_def_difficulty"
     ])
     
     # Get key parameter estimates
