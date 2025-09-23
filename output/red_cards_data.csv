@@ -1,6 +1,9 @@
 match_id,match_date,league_id,team_id,side,min,player_name,card_type,season
-4813375,2025-08-16T11:30:00.000Z,Premier_League,10252,home,66,Ezri Konsa,Red Card,2025-2026
-4813385,2025-08-23T14:00:00.000Z,Premier_League,8602,away,49,Toti Gomes,Red Card,2025-2026
-4813393,2025-08-25T19:00:00.000Z,Premier_League,10261,home,45,Anthony Gordon,Red Card,2025-2026
-4813408,2025-09-14T13:00:00.000Z,Premier_League,8191,home,84,Lesley Ugochukwu,Red Card,2025-2026
-4813414,2025-09-13T16:30:00.000Z,Premier_League,8654,home,54,Tomas Soucek,Red Card,2025-2026
+4825028,2025-08-09T14:00:00.000Z,Championship,8659,home,90,Darnell Furlong,Red Card,2025-2026
+4825030,2025-08-10T15:30:00.000Z,Championship,10163,away,76,Barry Bannan,Red Card,2025-2026
+4825055,2025-08-16T14:00:00.000Z,Championship,9817,home,90,Imran Louza,Red Card,2025-2026
+4825062,2025-08-23T14:00:00.000Z,Championship,9850,home,58,Jacob Wright,Red Card,2025-2026
+4825065,2025-08-23T14:00:00.000Z,Championship,10194,away,59,Divin Mubama,Red Card,2025-2026
+4825069,2025-08-30T14:00:00.000Z,Championship,8655,home,44,Sean McLoughlin,Red Card,2025-2026
+4825081,2025-09-13T11:30:00.000Z,Championship,8451,home,74,Kayne Ramsay,Red Card,2025-2026
+4825084,2025-09-13T11:30:00.000Z,Championship,8197,away,24,Aaron Ramsey,Red Card,2025-2026

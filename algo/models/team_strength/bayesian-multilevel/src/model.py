@@ -4,55 +4,40 @@ import pandas as pd
 import arviz as az
 from src.trace_save_load import save_season_trace
 
-def build_and_sample_model(train_df, n_teams, trace=5000, tune=2500):
-    """Build and sample the football model with league difficulty multipliers"""
+def build_and_sample_model(train_df, n_teams, current_season=None, league=None, 
+                          trace=5000, tune=2500, team_mapping=None, model_version="v1"):
+    """Build and sample the football model with automatic previous season priors"""
     
     home_idx = train_df['home_idx'].values
     away_idx = train_df['away_idx'].values
     home_goals_obs = train_df['home_goals'].values
     away_goals_obs = train_df['away_goals'].values
     
-    # League indicators for each match (1=Premier League, 0=Championship)
-    league = (train_df['league_id'] == 'Premier_League').astype(int).values
     
     with pm.Model() as model:
-        # Base team strengths (league-neutral)
+        # Default priors - no previous season information
         att_str_raw = pm.Normal("att_str_raw", mu=0, sigma=1, shape=n_teams)
         def_str_raw = pm.Normal("def_str_raw", mu=0, sigma=1, shape=n_teams)
-        
-        # Apply sum-to-zero constraints
+
+        # Center the team strengths
         att_str = pm.Deterministic("att_str", att_str_raw - pm.math.mean(att_str_raw))
         def_str = pm.Deterministic("def_str", def_str_raw - pm.math.mean(def_str_raw))
         
-        # League difficulty multipliers [Championship=0, Premier League=1]
-        # Championship ~10% easier: goals worth less for attack rating, defenses get slight credit
-        #league_att_difficulty = pm.Normal("league_att_difficulty", 
-        #                                 mu=[0.8, 1.0],      # Championship attacks worth 0%
-        #                                 sigma=0.1, shape=2)
-        #league_def_difficulty = pm.Normal("league_def_difficulty", 
-        #                                 mu=[1.2, 1.0],      # Championship defenses get 10% credit
-        #                                 sigma=0.1, shape=2)
+        # Other model components
+        #home_adv = pm.Normal("home_adv", mu=0.15, sigma=0.15)
+        #baseline = pm.Normal("baseline", mu=0, sigma=1)
+        home_adv = pm.Flat("home_adv")
+        baseline = pm.Flat("baseline")
 
-        league_att_difficulty = pm.math.constant([1.5, 1]) 
-        league_def_difficulty = pm.math.constant([1.5, 1]) 
+        home_goals_mu = pm.math.exp(baseline + att_str[home_idx] + def_str[away_idx] + home_adv)
+        away_goals_mu = pm.math.exp(baseline + att_str[away_idx] + def_str[home_idx])
 
-        # Other model parameters
-        home_adv = pm.Normal("home_adv", mu=0.25, sigma=0.2)
-        baseline = pm.Normal("baseline", mu=0.37, sigma=0.3)
-
-        # Apply league difficulty adjustments to get effective strengths
-        effective_home_att = att_str[home_idx] * league_att_difficulty[league]
-        effective_away_def = def_str[away_idx] * league_def_difficulty[league]
-        effective_away_att = att_str[away_idx] * league_att_difficulty[league]
-        effective_home_def = def_str[home_idx] * league_def_difficulty[league]
-
-        # Expected goals with league-adjusted strengths
-        home_goals_mu = pm.math.exp(baseline + effective_home_att + effective_away_def + home_adv)
-        away_goals_mu = pm.math.exp(baseline + effective_away_att + effective_home_def)
-
-        # Likelihood
-        pm.Poisson("home_goals", mu=home_goals_mu, observed=home_goals_obs)
-        pm.Poisson("away_goals", mu=away_goals_mu, observed=away_goals_obs)
+        # Weighted likelihood
+        weights = pm.ConstantData("weights", train_df["weight"].values)
+        home_logp = pm.logp(pm.Poisson.dist(mu=home_goals_mu), home_goals_obs)
+        away_logp = pm.logp(pm.Poisson.dist(mu=away_goals_mu), away_goals_obs)
+        pm.Potential("weighted_home_goals", pm.math.sum(weights * home_logp))
+        pm.Potential("weighted_away_goals", pm.math.sum(weights * away_logp))
 
         # Sample
         trace = pm.sample(trace=trace, tune=tune, cores=4, nuts_sampler='blackjax', 
@@ -297,8 +282,8 @@ def analyze_model_results(trace, teams):
         "def_str",            
         "home_adv",
         "baseline",
-        #"league_att_difficulty",
-        #"league_def_difficulty"
+        "league_scale_att",
+        "league_scale_def"
     ])
     
     # Get key parameter estimates
