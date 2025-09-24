@@ -398,7 +398,7 @@ def create_weighted_scoreline_data(match_df: pd.DataFrame,
         # Apply time decay and red card penalty
         time_weight = np.exp(-decay_rate * row['days_ago'])
         for s in current_match_data:
-            s['weight'] = s['weight'] * time_weight * red_card_penalty
+            s['weight'] = s['weight'] * red_card_penalty #* time_weight 
         
         expanded_data.extend(current_match_data)
     
