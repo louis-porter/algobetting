@@ -5,35 +5,92 @@ import arviz as az
 from src.trace_save_load import save_season_trace
 
 def build_and_sample_model(train_df, n_teams, current_season=None, league=None, 
-                          trace=5000, tune=2500, team_mapping=None, model_version="v1"):
-    """Build and sample the football model with automatic previous season priors"""
+                          trace=5000, tune=2500, team_mapping=None, model_version="v1",
+                          manual_att_priors=None, manual_def_priors=None):
+    """Build and sample the football model with manual team priors
+    
+    Parameters:
+    -----------
+    manual_att_priors : dict or list, optional
+        Manual attack strength priors for teams. Can be:
+        - dict: {team_name: (mu, sigma), ...} where team_name matches keys in team_mapping
+        - list: [(mu, sigma), ...] in same order as team indices
+    manual_def_priors : dict or list, optional
+        Manual defense strength priors for teams. Same format as manual_att_priors
+    """
     
     home_idx = train_df['home_idx'].values
     away_idx = train_df['away_idx'].values
     home_goals_obs = train_df['home_goals'].values
     away_goals_obs = train_df['away_goals'].values
     
+    def process_manual_priors(priors, n_teams, team_mapping):
+        """Convert manual priors to arrays of mu and sigma values"""
+        if priors is None:
+            return None, None
+            
+        mu_array = np.zeros(n_teams)
+        sigma_array = np.ones(n_teams)  # Default sigma = 1
+        
+        if isinstance(priors, dict):
+            if team_mapping is None:
+                raise ValueError("team_mapping must be provided when using dict priors")
+            
+            for team_name, (mu, sigma) in priors.items():
+                if team_name in team_mapping:
+                    idx = team_mapping[team_name]
+                    mu_array[idx] = mu
+                    sigma_array[idx] = sigma
+                else:
+                    print(f"Warning: Team '{team_name}' not found in team_mapping")
+                    
+        elif isinstance(priors, list):
+            if len(priors) != n_teams:
+                raise ValueError(f"List priors length ({len(priors)}) must match n_teams ({n_teams})")
+            
+            for i, (mu, sigma) in enumerate(priors):
+                mu_array[i] = mu
+                sigma_array[i] = sigma
+        else:
+            raise ValueError("Manual priors must be dict or list")
+            
+        return mu_array, sigma_array
     
     with pm.Model() as model:
-        # Default priors - no previous season information
-        att_str_raw = pm.Normal("att_str_raw", mu=0, sigma=1, shape=n_teams)
-        def_str_raw = pm.Normal("def_str_raw", mu=0, sigma=1, shape=n_teams)
+        # Process manual priors
+        att_mu, att_sigma = process_manual_priors(manual_att_priors, n_teams, team_mapping)
+        def_mu, def_sigma = process_manual_priors(manual_def_priors, n_teams, team_mapping)
+        
+        # Set up attack strength priors
+        if att_mu is not None:
+            att_str_raw = pm.Normal("att_str_raw", mu=att_mu, sigma=att_sigma, shape=n_teams)
+        else:
+            # Default priors
+            att_str_raw = pm.Normal("att_str_raw", mu=0, sigma=1, shape=n_teams)
+            
+        # Set up defense strength priors  
+        if def_mu is not None:
+            def_str_raw = pm.Normal("def_str_raw", mu=def_mu, sigma=def_sigma, shape=n_teams)
+        else:
+            # Default priors
+            def_str_raw = pm.Normal("def_str_raw", mu=0, sigma=1, shape=n_teams)
 
         # Center the team strengths
         att_str = pm.Deterministic("att_str", att_str_raw - pm.math.mean(att_str_raw))
         def_str = pm.Deterministic("def_str", def_str_raw - pm.math.mean(def_str_raw))
         
         # Other model components
-        #home_adv = pm.Normal("home_adv", mu=0.15, sigma=0.15)
-        #baseline = pm.Normal("baseline", mu=0, sigma=1)
-        home_adv = pm.Flat("home_adv")
-        baseline = pm.Flat("baseline")
+        home_adv = pm.Normal("home_adv", mu=0.25, sigma=0.2)
+        baseline = pm.Normal("baseline", mu=0.357, sigma=0.1)
 
         home_goals_mu = pm.math.exp(baseline + att_str[home_idx] + def_str[away_idx] + home_adv)
         away_goals_mu = pm.math.exp(baseline + att_str[away_idx] + def_str[home_idx])
 
-        # Weighted likelihood
-        weights = pm.ConstantData("weights", train_df["weight"].values)
+        try:
+            weights = pm.ConstantData("weights", train_df["weight"].values)
+        except AttributeError:
+            # For older PyMC versions
+            weights = pm.Data("weights", train_df["weight"].values)
         home_logp = pm.logp(pm.Poisson.dist(mu=home_goals_mu), home_goals_obs)
         away_logp = pm.logp(pm.Poisson.dist(mu=away_goals_mu), away_goals_obs)
         pm.Potential("weighted_home_goals", pm.math.sum(weights * home_logp))
