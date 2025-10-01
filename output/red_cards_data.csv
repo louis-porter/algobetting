@@ -1,1 +1,45 @@
-match_id,match_date,league_id,team_id,side,min,player_name,card_type,season
+match_id,match_date,team_id,side,time,nameStr,type,season,league_id
+3610019,2021-10-31,10252,home,50,Ezri Konsa,Red Card,2021-2022,Premier_League
+3610023,2021-10-30,8456,home,45,Aymeric Laporte,Red Card,2021-2022,Premier_League
+3610130,2022-01-01,9825,home,59,Gabriel,Red Card,2021-2022,Premier_League
+3610034,2021-11-07,8668,home,90,Mason Holgate,Red Card,2021-2022,Premier_League
+3610215,2022-03-13,8668,home,78,Jonjoe Kenny,Red Card,2021-2022,Premier_League
+3610151,2022-01-22,9937,home,90,Thomas Frank,Red Card,2021-2022,Premier_League
+3610106,2021-12-19,8650,away,77,Andrew Robertson,Red Card,2021-2022,Premier_League
+3610147,2022-05-12,9825,away,33,Rob Holding,Red Card,2021-2022,Premier_League
+3609947,2021-08-23,8197,away,40,Ayoze Pérez,Red Card,2021-2022,Premier_League
+3610265,2022-04-24,8654,away,86,Craig Dawson,Red Card,2021-2022,Premier_League
+3610160,2022-02-09,10252,home,87,Ezri Konsa,Red Card,2021-2022,Premier_League
+3610005,2021-10-17,10261,home,83,Jonjo Shelvey,Red Card,2021-2022,Premier_League
+3610117,2021-12-26,9826,away,37,Wilfried Zaha,Red Card,2021-2022,Premier_League
+3609967,2021-09-11,8654,away,90,Michail Antonio,Red Card,2021-2022,Premier_League
+3610029,2021-11-07,9817,away,89,Juraj Kucka,Red Card,2021-2022,Premier_League
+3610090,2021-12-15,8654,away,67,Vladimir Coufal,Red Card,2021-2022,Premier_League
+3610301,2022-05-22,9937,home,80,Sergi Canos,Red Card,2021-2022,Premier_League
+3610012,2021-10-23,9850,away,65,Ben Gibson,Red Card,2021-2022,Premier_League
+3610100,2022-05-19,8191,away,90,Matthew Lowton,Red Card,2021-2022,Premier_League
+3610229,2022-03-18,8602,home,53,Raul Jiménez,Red Card,2021-2022,Premier_League
+3610031,2021-11-06,10204,home,90,Robert Sánchez,Red Card,2021-2022,Premier_League
+3610066,2021-11-30,10261,home,9,Ciaran Clark,Red Card,2021-2022,Premier_League
+3609953,2021-08-28,9825,away,35,Granit Xhaka,Red Card,2021-2022,Premier_League
+3610103,2022-02-15,10204,away,54,Lewis Dunk,Red Card,2021-2022,Premier_League
+3610284,2022-05-07,9817,away,69,Hassane Kamara,Red Card,2021-2022,Premier_League
+3610047,2021-11-20,10260,away,69,Harry Maguire,Red Card,2021-2022,Premier_League
+3609964,2021-09-12,8463,home,60,Pascal Struijk,Red Card,2021-2022,Premier_League
+3610211,2022-03-12,8191,away,90,Nathan Collins,Red Card,2021-2022,Premier_League
+3610289,2022-05-08,8463,away,27,Luke Ayling,Red Card,2021-2022,Premier_League
+3610231,2022-04-03,8668,away,65,Michael Keane,Red Card,2021-2022,Premier_League
+3610159,2022-01-21,9817,home,78,Emmanuel Dennis,Red Card,2021-2022,Premier_League
+3609952,2021-08-28,8455,away,45,Reece James,Red Card,2021-2022,Premier_League
+3610088,2021-12-11,8602,away,45,Raul Jiménez,Red Card,2021-2022,Premier_League
+3609991,2021-10-02,8466,away,77,James Ward-Prowse,Red Card,2021-2022,Premier_League
+3610191,2022-02-26,9937,home,11,Joshua Dasilva,Red Card,2021-2022,Premier_League
+3610257,2022-05-11,8463,home,24,Daniel James,Red Card,2021-2022,Premier_League
+3610129,2021-12-28,8466,home,39,Mohammed Salisu,Red Card,2021-2022,Premier_League
+3610125,2022-03-17,8668,home,83,Allan,Red Card,2021-2022,Premier_League
+3610298,2022-05-15,8668,home,18,Jarrad Branthwaite,Red Card,2021-2022,Premier_League
+3610298,2022-05-15,8668,home,88,José Salomon Rondon,Red Card,2021-2022,Premier_League
+3609978,2021-09-18,9937,away,64,Shandon Baptiste,Red Card,2021-2022,Premier_League
+3610165,2022-02-10,9825,away,69,Gabriel Martinelli,Red Card,2021-2022,Premier_League
+3610016,2021-10-24,10260,home,60,Paul Pogba,Red Card,2021-2022,Premier_League
+3609962,2021-09-11,8586,away,58,Japhet Tanganga,Red Card,2021-2022,Premier_League

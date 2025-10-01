@@ -46,9 +46,9 @@ def load_football_data(db_path: str, league: Union[str, List[str]], season: str)
             home_goals,
             away.team_name as away_team,
             away_goals
-        FROM fotmob_match_data fmd
-            JOIN fotmob_team_id_mapping home ON home.team_id = fmd.home_team
-            JOIN fotmob_team_id_mapping away ON away.team_id = fmd.away_team
+        FROM matches fmd
+            JOIN team_id_mapping home ON home.team_id = fmd.home_team
+            JOIN team_id_mapping away ON away.team_id = fmd.away_team
         WHERE
             league_id IN ({league_placeholders})
             AND season = ?
@@ -63,10 +63,10 @@ def load_football_data(db_path: str, league: Union[str, List[str]], season: str)
             season,
             team.team_name as team,
             side,
-            xg,
-            psxg
-        FROM fotmob_shot_data fsd
-            JOIN fotmob_team_id_mapping team ON team.team_id = fsd.team_id
+            expectedGoals,
+            expectedGoalsOnTarget
+        FROM shots fsd
+            JOIN team_id_mapping team ON team.team_id = fsd.teamId
         WHERE
             league_id IN ({league_placeholders})
             AND season = ?
@@ -81,10 +81,10 @@ def load_football_data(db_path: str, league: Union[str, List[str]], season: str)
             season,
             team.team_name as team,
             side,
-            min,
-            card_type
-        FROM fotmob_red_card_data frcd
-            JOIN fotmob_team_id_mapping team ON team.team_id = frcd.team_id
+            time,
+            type
+        FROM red_cards frcd
+            JOIN team_id_mapping team ON team.team_id = frcd.team_id
         WHERE
             league_id IN ({league_placeholders})
             AND season = ?
@@ -200,7 +200,7 @@ def calculate_red_card_penalty(red_cards_df: pd.DataFrame, match_id: str) -> flo
         return 1.0  # No penalty if no red cards
     
     # Get the earliest red card minute for this match
-    earliest_red_minute = match_red_cards['min'].min()
+    earliest_red_minute = match_red_cards['time'].min()
     
     # Apply penalty based on when the red card occurred
     if earliest_red_minute > 80:
@@ -268,10 +268,10 @@ def create_weighted_scoreline_data(match_df: pd.DataFrame,
             print(f"Warning: No shot data found for match_id {match_id}")
             continue
             
-        home_xg_shots = match_shots[match_shots['side'] == 'home']['xg'].values
-        away_xg_shots = match_shots[match_shots['side'] == 'away']['xg'].values
-        home_psxg_shots = match_shots[match_shots['side'] == 'home']['psxg'].values
-        away_psxg_shots = match_shots[match_shots['side'] == 'away']['psxg'].values
+        home_xg_shots = match_shots[match_shots['side'] == 'home']['expectedGoals'].values
+        away_xg_shots = match_shots[match_shots['side'] == 'away']['expectedGoals'].values
+        home_psxg_shots = match_shots[match_shots['side'] == 'home']['expectedGoalsOnTarget'].values
+        away_psxg_shots = match_shots[match_shots['side'] == 'away']['expectedGoalsOnTarget'].values
 
         # Calculate red card penalty
         red_card_penalty = calculate_red_card_penalty(red_df, match_id)
