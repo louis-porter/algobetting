@@ -3,31 +3,50 @@ import pandas as pd
 import numpy as np
 import os
 import sqlite3
+import re
 from pathlib import Path
 from datetime import datetime
 
+def parse_value_with_percentage(value):
+    """
+    Parse values like "364 (84%)" into separate number and percentage
+    Returns: (value, percentage) or (value, None) if no percentage
+    """
+    if value is None:
+        return None, None
+    
+    value_str = str(value)
+    
+    # Check if there's a percentage in parentheses
+    match = re.match(r'^(.+?)\s*\((\d+)%\)$', value_str)
+    if match:
+        return match.group(1).strip(), int(match.group(2))
+    else:
+        return value, None
+
 def process_json_files(folder_path):
     """
-    Process all JSON files in a folder and extract shots, red cards, and match data.
+    Process all JSON files in a folder and extract shots, red cards, matches, and match stats data.
     
     Args:
         folder_path (str): Path to the folder containing JSON files
     
     Returns:
-        tuple: (shots_df, red_cards_df, matches_df) - Three consolidated DataFrames
+        tuple: (shots_df, red_cards_df, matches_df, match_stats_df) - Four consolidated DataFrames
     """
     
     # Initialize empty lists to store data
     all_shots = []
     all_red_cards = []
     all_matches = []
+    all_match_stats = []
     
     # Get all JSON files in the folder
     json_files = list(Path(folder_path).glob("*.json"))
     
     if not json_files:
         print(f"No JSON files found in {folder_path}")
-        return None, None, None
+        return None, None, None, None
     
     print(f"Processing {len(json_files)} JSON files...")
     
@@ -104,13 +123,51 @@ def process_json_files(folder_path):
                     
             except KeyError as e:
                 print(f"Warning: Missing match data key {e} in {file_path.name}")
+            
+            # Process match stats data
+            try:
+                if 'stats' in data and 'Periods' in data['stats'] and 'All' in data['stats']['Periods']:
+                    stats = data['stats']['Periods']['All']['stats']
+                    
+                    # Create match stats dictionary with basic info
+                    match_stats = {
+                        'match_id': match_id,
+                        'home_team': home_team,
+                        'away_team': away_team,
+                        'match_date': match_date,
+                        'league_id': league
+                    }
+                    
+                    # Add all stats as columns with home_ and away_ prefixes
+                    for category in stats:
+                        for stat in category['stats']:
+                            stat_key = stat['key']
+                            stat_values = stat['stats']
+                            
+                            if stat_values and len(stat_values) >= 2:
+                                # Parse home value
+                                home_val, home_pct = parse_value_with_percentage(stat_values[0])
+                                match_stats[f'home_{stat_key}'] = home_val
+                                if home_pct is not None:
+                                    match_stats[f'home_{stat_key}_pct'] = home_pct
+                                
+                                # Parse away value
+                                away_val, away_pct = parse_value_with_percentage(stat_values[1])
+                                match_stats[f'away_{stat_key}'] = away_val
+                                if away_pct is not None:
+                                    match_stats[f'away_{stat_key}_pct'] = away_pct
+                    
+                    all_match_stats.append(match_stats)
+                    
+            except KeyError as e:
+                print(f"Warning: Missing stats data key {e} in {file_path.name}")
                 
         except Exception as e:
             print(f"Error processing {file_path.name}: {str(e)}")
             continue
     
     # Create DataFrames
-    print("Creating DataFrames...")
+    print("\nCreating DataFrames...")
     
     # Shots DataFrame
     if all_shots:
@@ -153,6 +210,16 @@ def process_json_files(folder_path):
         matches_df = pd.DataFrame(columns=["match_id", "league_id", "match_date", "home_team", "home_goals", "away_team", "away_goals"])
         print("No match data found")
     
+    # Match Stats DataFrame
+    if all_match_stats:
+        match_stats_df = pd.DataFrame(all_match_stats)
+        # Convert match_date to yyyy-mm-dd format
+        match_stats_df['match_date'] = pd.to_datetime(match_stats_df['match_date']).dt.strftime('%Y-%m-%d')
+        print(f"Created match stats DataFrame with {len(match_stats_df)} rows and {len(match_stats_df.columns)} columns")
+    else:
+        match_stats_df = pd.DataFrame(columns=["match_id", "home_team", "away_team", "match_date", "league_id"])
+        print("No match stats data found")
+    
     # Merge match_date into shots_df and red_cards_df
     if not matches_df.empty:
         if not shots_df.empty:
@@ -179,9 +246,9 @@ def process_json_files(folder_path):
             cols.insert(1, 'match_date')
             red_cards_df = red_cards_df[cols]
     
-    return shots_df, red_cards_df, matches_df
+    return shots_df, red_cards_df, matches_df, match_stats_df
 
-def save_to_database(shots_df, red_cards_df, matches_df, season, league, db_name="infra/data/db/fotmob.db"):
+def save_to_database(shots_df, red_cards_df, matches_df, match_stats_df, season, league, db_name="infra/data/db/fotmob.db"):
     """
     Save the DataFrames to SQLite database tables with duplicate checking.
     
@@ -189,6 +256,7 @@ def save_to_database(shots_df, red_cards_df, matches_df, season, league, db_name
         shots_df (pd.DataFrame): Shots data
         red_cards_df (pd.DataFrame): Red cards data  
         matches_df (pd.DataFrame): Matches data
+        match_stats_df (pd.DataFrame): Match stats data
         season (str): Season identifier
         league (str): League identifier
         db_name (str): Name of the SQLite database file
@@ -197,10 +265,12 @@ def save_to_database(shots_df, red_cards_df, matches_df, season, league, db_name
     shots_df["season"] = season
     red_cards_df["season"] = season
     matches_df["season"] = season
+    match_stats_df["season"] = season
 
     shots_df["league_id"] = league
     red_cards_df["league_id"] = league
     matches_df["league_id"] = league
+    match_stats_df["league_id"] = league
 
     # Connect to SQLite database (creates it if it doesn't exist)
     conn = sqlite3.connect(db_name)
@@ -271,6 +341,10 @@ def save_to_database(shots_df, red_cards_df, matches_df, season, league, db_name
         insert_without_duplicates(matches_df, 'matches', conn,
                                  key_columns=['match_id', 'season', 'league_id'])
         
+        print("\nProcessing match_stats table:")
+        insert_without_duplicates(match_stats_df, 'match_stats', conn,
+                                 key_columns=['match_id', 'season', 'league_id'])
+        
         print(f"\n✓ Data successfully saved to {db_name}")
         
     except Exception as e:
@@ -282,18 +356,25 @@ def save_to_database(shots_df, red_cards_df, matches_df, season, league, db_name
 # Main execution
 if __name__ == "__main__":
     # Set the folder path containing your JSON files
-    season = "2021-2022"
+    season = "2025-2026"
     league = "Premier_League"
     folder_path = r"infra/data/json" + "/" + league + "/" + season
     
     # Process all JSON files
-    shots_df, red_cards_df, matches_df = process_json_files(folder_path)
+    shots_df, red_cards_df, matches_df, match_stats_df = process_json_files(folder_path)
     
     if shots_df is not None:
         # Save to SQLite database
-        save_to_database(shots_df, red_cards_df, matches_df, season=season, league=league)
+        save_to_database(shots_df, red_cards_df, matches_df, match_stats_df, season=season, league=league)
         
-        # You can also access the DataFrames individually:
-        # shots_df, red_cards_df, matches_df are now available for further processing
+        # Display sample of match stats
+        print("\n" + "="*50)
+        print("Sample Match Stats:")
+        print("="*50)
+        if not match_stats_df.empty:
+            print(f"\nTotal columns in match_stats: {len(match_stats_df.columns)}")
+            print(f"Sample columns: {list(match_stats_df.columns[:10])}")
+            print(f"\nFirst row sample:")
+            print(match_stats_df.iloc[0][['match_id', 'home_team', 'away_team', 'home_BallPossesion', 'away_BallPossesion']].to_dict() if 'home_BallPossesion' in match_stats_df.columns else "Ball possession data not available")
     else:
         print("No data processed. Please check your folder path and JSON files.")

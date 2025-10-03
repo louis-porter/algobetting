@@ -22,6 +22,9 @@ def build_and_sample_model(train_df, n_teams, current_season=None, league=None,
     home_idx = train_df['home_idx'].values
     away_idx = train_df['away_idx'].values
 
+    home_goals_obs = train_df["home_goals"]
+    away_goals_obs = train_df["away_goals"]
+
    
     def process_manual_priors(priors, n_teams, team_mapping):
         """Convert manual priors to arrays of mu and sigma values"""
