@@ -17,9 +17,8 @@ BASE_URL = "https://www.fotmob.com/api/data"
 
 # CHANGE THIS HEADER
 HEADERS = {
-    "x-mas": "eyJib2R5Ijp7InVybCI6Ii9hcGkvZGF0YS90ZWFtLW9mLXRoZS13ZWVrL3RlYW0/bGVhZ3VlSWQ9NDImcm91bmRJZD0xJnNlYXNvbj0yMDI1JTJGMjAyNiIsImNvZGUiOjE3NTkzMjMxMDg4NDMsImZvbyI6InByb2R1Y3Rpb246NTczYWQ2MzAzMzUxOTQ3ZTAyYjExZDVhMDNiYTU2MTUwMDk1ZmVmOSJ9LCJzaWduYXR1cmUiOiJEMUFGRUUzN0NDOUEwQTcyODE3MzhGNzU3NUIyNjBGQSJ9"
+    "x-mas": "eyJib2R5Ijp7InVybCI6Ii9hcGkvZGF0YS9tYXRjaGVzP2RhdGU9MjAyNTEwMDgmdGltZXpvbmU9RXVyb3BlJTJGTG9uZG9uJmNjb2RlMz1HQlIiLCJjb2RlIjoxNzU5OTE5ODY3NjQ3LCJmb28iOiJwcm9kdWN0aW9uOjBkYzg4ZDUyM2U2Y2Y3OWZlYzNiNzUwZGFhNDgwODkyOGYwNDliMWYifSwic2lnbmF0dXJlIjoiMzM3MkUwM0E3Q0ZDQkE0NzAxOTcyNzA2QUYwQTlGMDMifQ=="
 }
-
 
 def fetch_match(session, match_id):
     url = f"{BASE_URL}/matchDetails?matchId={match_id}"
@@ -88,7 +87,7 @@ def main():
     with requests.Session() as session:
         session.headers.update(HEADERS)
         for league in LEAGUES:
-            for season_start in range(2021, 2026):
+            for season_start in range(2025, 2026):
                 store_season(session, league, season_start)
 
 
