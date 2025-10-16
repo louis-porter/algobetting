@@ -62,21 +62,21 @@ def build_and_sample_model(train_df, n_teams, current_season=None, league=None,
        
         # Set up attack strength priors
         if att_mu is not None:
-            att_str_raw = pm.Normal("att_str_raw", mu=att_mu, sigma=att_sigma) #, shape=n_teams)
+            att_mu_centered = att_mu - att_mu.mean()
+            att_str = pm.Normal("att_str", mu=att_mu_centered, sigma=att_sigma, shape=n_teams)
         else:
-            # Default priors
-            att_str_raw = pm.Normal("att_str_raw", mu=0, sigma=1, shape=n_teams)
+            att_str = pm.Normal("att_str", mu=0, sigma=1, shape=n_teams)
             
         # Set up defense strength priors  
         if def_mu is not None:
-            def_str_raw = pm.Normal("def_str_raw", mu=def_mu, sigma=def_sigma) #, shape=n_teams)
+            def_mu_centered = def_mu - att_mu.mean()
+            def_str = pm.Normal("def_str", mu=def_mu_centered, sigma=def_sigma, shape=n_teams)
         else:
-            # Default priors
-            def_str_raw = pm.Normal("def_str_raw", mu=0, sigma=1, shape=n_teams)
+            def_str = pm.Normal("def_str", mu=0, sigma=1, shape=n_teams)
 
         # Center the team strengths
-        att_str = pm.Deterministic("att_str", att_str_raw - pm.math.mean(att_str_raw))
-        def_str = pm.Deterministic("def_str", def_str_raw - pm.math.mean(def_str_raw))
+        #att_str = pm.Deterministic("att_str", att_str_raw - pm.math.mean(att_str_raw))
+        #def_str = pm.Deterministic("def_str", def_str_raw - pm.math.mean(def_str_raw))
         
         # Other model components
         home_adv = pm.Normal("home_adv", mu=0.25, sigma=0.2)

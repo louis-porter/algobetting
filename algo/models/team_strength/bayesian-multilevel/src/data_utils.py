@@ -9,9 +9,9 @@ from scipy.stats import poisson
 from itertools import product
 from typing import Dict, List, Tuple, Optional, Union
 
-def load_football_data(db_path: str, league: Union[str, List[str]], season: str) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def load_football_data(db_path: str, league: Union[str, List[str]], season: str) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
-    Load match, shot, and red card data from SQLite database
+    Load match, shot, red card, and EPV data from SQLite database
     
     Parameters:
     -----------
@@ -24,7 +24,7 @@ def load_football_data(db_path: str, league: Union[str, List[str]], season: str)
     
     Returns:
     --------
-    match_df, shot_df, red_df : tuple of DataFrames
+    match_df, shot_df, red_df, epv_df : tuple of DataFrames
     """
     conn = sqlite3.connect(db_path)
 
@@ -89,15 +89,32 @@ def load_football_data(db_path: str, league: Union[str, List[str]], season: str)
             league_id IN ({league_placeholders})
             AND season = ?
     """, conn, params=leagues + [season])
-    
+
+    # Load EPV data
+    epv_df = pd.read_sql_query(f"""
+        SELECT DISTINCT
+            red.match_id,
+            red.match_date,
+            epv.team,
+            epv.EPV,
+            epv.season,
+            epv.division as league_id
+        FROM shots red
+        JOIN team_id_mapping team ON team.team_id = red.teamId
+        JOIN epv ON epv.team = team.team_name AND red.match_date = DATE(epv.startDate)                  
+        WHERE
+            division IN ({league_placeholders})
+            AND epv.season = ?
+    """, conn, params=leagues + [season])
+
     conn.close()
     
     # Add days_ago calculation for all dataframes
-    for df in [match_df, shot_df, red_df]:
+    for df in [match_df, shot_df, red_df, epv_df]:
         df["days_ago"] = (pd.to_datetime(df["match_date"]).max() - pd.to_datetime(df["match_date"])).dt.days
         df["match_date"] = pd.to_datetime(df["match_date"])
     
-    return match_df, shot_df, red_df
+    return match_df, shot_df, red_df, epv_df
 
 def poisson_binomial_pmf(k: int, p_values: np.ndarray) -> float:
     """
@@ -221,12 +238,14 @@ def calculate_red_card_penalty(red_cards_df: pd.DataFrame, match_id: str) -> flo
 def create_weighted_scoreline_data(match_df: pd.DataFrame, 
                                  shot_df: pd.DataFrame,
                                  red_df: pd.DataFrame,
+                                 epv_df: pd.DataFrame,
                                  max_goals: int = 9,
                                  min_prob_threshold: float = 0.001,
                                  decay_rate: float = 0.001,
                                  goals_weight: float = 0.2,
-                                 xg_weight: float = 0.5,
-                                 psxg_weight: float = 0.3) -> pd.DataFrame:
+                                 xg_weight: float = 0.45,
+                                 psxg_weight: float = 0.25,
+                                 epv_weight: float = 0.1) -> pd.DataFrame:
     """
     Create expanded dataset with all possible scorelines using Poisson-Binomial 
     and Poisson distributions with sophisticated weighting
@@ -239,6 +258,8 @@ def create_weighted_scoreline_data(match_df: pd.DataFrame,
         Shot-level data with xG and psxG
     red_df : DataFrame
         Red card data
+    epv_df : DataFrame
+        EPV data
     max_goals : int
         Maximum goals to consider per team
     min_prob_threshold : float
@@ -251,6 +272,8 @@ def create_weighted_scoreline_data(match_df: pd.DataFrame,
         Weight for xG-based probabilities
     psxg_weight : float
         Weight for psxG-based probabilities
+    epv_weight : float
+        Weight for EPV-based probabilities
         
     Returns:
     --------
@@ -273,6 +296,14 @@ def create_weighted_scoreline_data(match_df: pd.DataFrame,
         home_psxg_shots = match_shots[match_shots['side'] == 'home']['expectedGoalsOnTarget'].values
         away_psxg_shots = match_shots[match_shots['side'] == 'away']['expectedGoalsOnTarget'].values
 
+        # Get EPV data for this match
+        match_epv = epv_df[epv_df["match_id"] == match_id]
+        home_epv = match_epv[match_epv['team'] == row['home_team']]['EPV'].values
+        away_epv = match_epv[match_epv['team'] == row['away_team']]['EPV'].values
+        
+        home_total_epv = home_epv[0] if len(home_epv) > 0 else 0
+        away_total_epv = away_epv[0] if len(away_epv) > 0 else 0
+
         # Calculate red card penalty
         red_card_penalty = calculate_red_card_penalty(red_df, match_id)
         
@@ -287,6 +318,10 @@ def create_weighted_scoreline_data(match_df: pd.DataFrame,
         # Generate scorelines with regular Poisson (total xG)
         home_total_xg_probs = {i: poisson.pmf(i, home_total_xg) for i in range(max_goals + 1)}
         away_total_xg_probs = {i: poisson.pmf(i, away_total_xg) for i in range(max_goals + 1)}
+        
+        # Generate scorelines with Poisson (EPV)
+        home_epv_probs = {i: poisson.pmf(i, home_total_epv) for i in range(max_goals + 1)}
+        away_epv_probs = {i: poisson.pmf(i, away_total_epv) for i in range(max_goals + 1)}
         
         # Create lookup dictionaries
         xg_pb_prob_lookup = {(sp['home_goals'], sp['away_goals']): sp['probability'] 
@@ -309,9 +344,11 @@ def create_weighted_scoreline_data(match_df: pd.DataFrame,
                 xg_pb_prob = xg_pb_prob_lookup.get((home_goals, away_goals), 0.0)
                 psxg_pb_prob = psxg_pb_prob_lookup.get((home_goals, away_goals), 0.0)
                 xg_total_poisson_prob = home_total_xg_probs[home_goals] * away_total_xg_probs[away_goals]
+                epv_poisson_prob = home_epv_probs[home_goals] * away_epv_probs[away_goals]
                 
                 # Skip if all probabilities are negligible
-                if xg_pb_prob < 1e-10 and xg_total_poisson_prob < 1e-10 and psxg_pb_prob < 1e-10:
+                if (xg_pb_prob < 1e-10 and xg_total_poisson_prob < 1e-10 and 
+                    psxg_pb_prob < 1e-10 and epv_poisson_prob < 1e-10):
                     continue
                 
                 # Check if this is the actual scoreline
@@ -330,6 +367,7 @@ def create_weighted_scoreline_data(match_df: pd.DataFrame,
                     'xg_pb_prob_raw': xg_pb_prob,
                     'psxg_pb_prob_raw': psxg_pb_prob,
                     'xg_total_poisson_prob_raw': xg_total_poisson_prob,
+                    'epv_poisson_prob_raw': epv_poisson_prob,
                 })
         
         if not match_scorelines:
@@ -340,7 +378,8 @@ def create_weighted_scoreline_data(match_df: pd.DataFrame,
             scoreline for scoreline in match_scorelines
             if (scoreline['xg_pb_prob_raw'] >= min_prob_threshold or 
                 scoreline['psxg_pb_prob_raw'] >= min_prob_threshold or 
-                scoreline['xg_total_poisson_prob_raw'] >= min_prob_threshold or 
+                scoreline['xg_total_poisson_prob_raw'] >= min_prob_threshold or
+                scoreline['epv_poisson_prob_raw'] >= min_prob_threshold or 
                 scoreline['is_actual'])
         ]
         
@@ -348,6 +387,7 @@ def create_weighted_scoreline_data(match_df: pd.DataFrame,
         total_xg_pb_prob = sum(s['xg_pb_prob_raw'] for s in filtered_scorelines)
         total_psxg_pb_prob = sum(s['psxg_pb_prob_raw'] for s in filtered_scorelines)
         total_xg_total_poisson_prob = sum(s['xg_total_poisson_prob_raw'] for s in filtered_scorelines)
+        total_epv_poisson_prob = sum(s['epv_poisson_prob_raw'] for s in filtered_scorelines)
         
         # Apply normalization and weighting
         remaining_weight = 1.0 - goals_weight
@@ -358,19 +398,22 @@ def create_weighted_scoreline_data(match_df: pd.DataFrame,
             norm_pb_xg_prob = scoreline['xg_pb_prob_raw'] / total_xg_pb_prob if total_xg_pb_prob > 0 else 0
             norm_pb_psxg_prob = scoreline['psxg_pb_prob_raw'] / total_psxg_pb_prob if total_psxg_pb_prob > 0 else 0
             norm_p_xg_total_prob = scoreline['xg_total_poisson_prob_raw'] / total_xg_total_poisson_prob if total_xg_total_poisson_prob > 0 else 0
+            norm_epv_prob = scoreline['epv_poisson_prob_raw'] / total_epv_poisson_prob if total_epv_poisson_prob > 0 else 0
             
             # Calculate final weight
             if scoreline['is_actual']:
                 # Actual scoreline gets boost
                 final_weight = goals_weight + (remaining_weight * (
                     xg_weight * norm_p_xg_total_prob + 
-                    psxg_weight * norm_pb_psxg_prob
+                    psxg_weight * norm_pb_psxg_prob +
+                    epv_weight * norm_epv_prob
                 ))
             else:
                 # Non-actual scorelines
                 final_weight = remaining_weight * (
                     xg_weight * norm_p_xg_total_prob + 
-                    psxg_weight * norm_pb_psxg_prob
+                    psxg_weight * norm_pb_psxg_prob +
+                    epv_weight * norm_epv_prob
                 )
             
             current_match_data.append({
@@ -386,7 +429,8 @@ def create_weighted_scoreline_data(match_df: pd.DataFrame,
                 'is_actual': scoreline['is_actual'],
                 'poisson_binomial_xg_prob': norm_pb_xg_prob,
                 'poisson_binomial_psxg_prob': norm_pb_psxg_prob,
-                'poisson_xg_total_prob': norm_p_xg_total_prob
+                'poisson_xg_total_prob': norm_p_xg_total_prob,
+                'poisson_epv_prob': norm_epv_prob
             })
         
         # Normalize weights for this match
@@ -453,11 +497,11 @@ def load_and_process_data(db_path: str, league: Union[str, List[str]], season: s
     n_teams : number of teams
     """
     # Load raw data
-    match_df, shot_df, red_df = load_football_data(db_path, league, season)
+    match_df, shot_df, red_df, epv_df = load_football_data(db_path, league, season)
     
     # Create weighted scoreline data
     weighted_df = create_weighted_scoreline_data(
-        match_df, shot_df, red_df, **scoreline_kwargs
+        match_df, shot_df, red_df, epv_df, **scoreline_kwargs
     )
     
     # Prepare for modeling

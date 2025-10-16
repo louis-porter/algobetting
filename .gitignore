@@ -1,1 +1,4 @@
-﻿
+﻿infra/data/db/fotmob.db
+infra/data/db/fotmob.sqbpro
+*.db
+infra/data/collectors/whoscored/events_202526.csv
