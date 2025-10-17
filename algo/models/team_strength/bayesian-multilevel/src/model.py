@@ -46,9 +46,6 @@ def build_and_sample_model(train_df, n_teams, current_season=None, league=None,
                 else:
                     print(f"Warning: Team '{team_name}' not found in team_mapping")
 
-        print(f"n_teams: {n_teams}")
-        print(f"Teams in manual priors: {len(priors) if priors else 0}")
-        print(f"Teams with sigma != 1.0: {np.sum(sigma_array != 1.0)}")
     
         
         return mu_array, sigma_array
@@ -62,25 +59,23 @@ def build_and_sample_model(train_df, n_teams, current_season=None, league=None,
        
         # Set up attack strength priors
         if att_mu is not None:
-            att_mu_centered = att_mu - att_mu.mean()
-            att_str = pm.Normal("att_str", mu=att_mu_centered, sigma=att_sigma, shape=n_teams)
+            att_str_raw = pm.Normal("att_str_raw", mu=att_mu, sigma=att_sigma, shape=n_teams)
         else:
-            att_str = pm.Normal("att_str", mu=0, sigma=1, shape=n_teams)
+            att_str_raw = pm.Normal("att_str_raw", mu=0, sigma=1, shape=n_teams)
             
         # Set up defense strength priors  
         if def_mu is not None:
-            def_mu_centered = def_mu - att_mu.mean()
-            def_str = pm.Normal("def_str", mu=def_mu_centered, sigma=def_sigma, shape=n_teams)
+            def_str_raw = pm.Normal("def_str_raw", mu=def_mu, sigma=def_sigma, shape=n_teams)
         else:
-            def_str = pm.Normal("def_str", mu=0, sigma=1, shape=n_teams)
+            def_str_raw = pm.Normal("def_str_raw", mu=0, sigma=1, shape=n_teams)
 
         # Center the team strengths
-        #att_str = pm.Deterministic("att_str", att_str_raw - pm.math.mean(att_str_raw))
-        #def_str = pm.Deterministic("def_str", def_str_raw - pm.math.mean(def_str_raw))
+        att_str = pm.Deterministic("att_str", att_str_raw - pm.math.mean(att_str_raw))
+        def_str = pm.Deterministic("def_str", def_str_raw - pm.math.mean(def_str_raw))
         
         # Other model components
-        home_adv = pm.Normal("home_adv", mu=0.25, sigma=0.2)
-        baseline = pm.Normal("baseline", mu=0.357, sigma=0.1)
+        home_adv = pm.Normal("home_adv", mu=np.log(1.21), sigma=0.1)
+        baseline = pm.Normal("baseline", mu=np.log(1.31), sigma=0.05) #baseline away rate of last 4 seasons
 
         home_goals_mu = pm.math.exp(baseline + att_str[home_idx] + def_str[away_idx] + home_adv)
         away_goals_mu = pm.math.exp(baseline + att_str[away_idx] + def_str[home_idx])
@@ -98,6 +93,7 @@ def build_and_sample_model(train_df, n_teams, current_season=None, league=None,
         # Sample
         trace = pm.sample(trace=trace, tune=tune, cores=4, nuts_sampler='blackjax', 
                          return_inferencedata=True, progressbar=False)
+        
     
     return model, trace
 

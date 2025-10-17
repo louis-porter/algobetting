@@ -353,12 +353,18 @@ def save_to_database(shots_df, red_cards_df, matches_df, match_stats_df, season,
     finally:
         conn.close()
 
-# Main execution
-if __name__ == "__main__":
+def main(season, league, folder_path=None):
+    """
+    Main function to process JSON files and save to database.
+    
+    Args:
+        season (str): Season identifier (e.g., "2025-2026")
+        league (str): League identifier (e.g., "Premier_League")
+        folder_path (str, optional): Custom folder path. If None, uses default structure.
+    """
     # Set the folder path containing your JSON files
-    season = "2025-2026"
-    league = "Premier_League"
-    folder_path = r"infra/data/json" + "/" + league + "/" + season
+    if folder_path is None:
+        folder_path = f"infra/data/json/{league}/{season}"
     
     # Process all JSON files
     shots_df, red_cards_df, matches_df, match_stats_df = process_json_files(folder_path)
@@ -378,3 +384,10 @@ if __name__ == "__main__":
             print(match_stats_df.iloc[0][['match_id', 'home_team', 'away_team', 'home_BallPossesion', 'away_BallPossesion']].to_dict() if 'home_BallPossesion' in match_stats_df.columns else "Ball possession data not available")
     else:
         print("No data processed. Please check your folder path and JSON files.")
+
+# Main execution
+if __name__ == "__main__":
+    # Default values when running the script directly
+    season = "2025-2026"
+    league = "Premier_League"
+    main(season, league)

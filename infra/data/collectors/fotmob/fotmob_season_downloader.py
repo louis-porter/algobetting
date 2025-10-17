@@ -16,9 +16,9 @@ LEAGUES = [
 BASE_URL = "https://www.fotmob.com/api/data"
 
 # CHANGE THIS HEADER
-HEADERS = {
-    "x-mas": "eyJib2R5Ijp7InVybCI6Ii9hcGkvZGF0YS9tYXRjaGVzP2RhdGU9MjAyNTEwMDgmdGltZXpvbmU9RXVyb3BlJTJGTG9uZG9uJmNjb2RlMz1HQlIiLCJjb2RlIjoxNzU5OTE5ODY3NjQ3LCJmb28iOiJwcm9kdWN0aW9uOjBkYzg4ZDUyM2U2Y2Y3OWZlYzNiNzUwZGFhNDgwODkyOGYwNDliMWYifSwic2lnbmF0dXJlIjoiMzM3MkUwM0E3Q0ZDQkE0NzAxOTcyNzA2QUYwQTlGMDMifQ=="
-}
+#HEADERS = {
+#    "x-mas": "eyJib2R5Ijp7InVybCI6Ii9hcGkvZGF0YS9tYXRjaGVzP2RhdGU9MjAyNTEwMDgmdGltZXpvbmU9RXVyb3BlJTJGTG9uZG9uJmNjb2RlMz1HQlIiLCJjb2RlIjoxNzU5OTE5ODY3NjQ3LCJmb28iOiJwcm9kdWN0aW9uOjBkYzg4ZDUyM2U2Y2Y3OWZlYzNiNzUwZGFhNDgwODkyOGYwNDliMWYifSwic2lnbmF0dXJlIjoiMzM3MkUwM0E3Q0ZDQkE0NzAxOTcyNzA2QUYwQTlGMDMifQ=="
+#}
 
 def fetch_match(session, match_id):
     url = f"{BASE_URL}/matchDetails?matchId={match_id}"
@@ -84,6 +84,10 @@ def store_season(session, league, season_start):
 
 
 def main():
+    xmas = input("Paste in xmas: ")
+    HEADERS = {
+        "x-mas": xmas
+    }
     with requests.Session() as session:
         session.headers.update(HEADERS)
         for league in LEAGUES:
