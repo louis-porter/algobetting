@@ -121,8 +121,8 @@ def process_epv_data(start_date, end_date, competition='england-premier-league',
 # Main execution
 if __name__ == "__main__":
     # Default values when running the script directly
-    start_date = datetime(2025, 8, 1)
-    end_date = datetime(2025, 10, 10)
+    start_date = datetime(2025, 10, 10)
+    end_date = datetime(2025, 10, 21)
     
     epv_df = process_epv_data(
         start_date=start_date,
