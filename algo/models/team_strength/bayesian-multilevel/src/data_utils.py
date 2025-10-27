@@ -221,19 +221,19 @@ def calculate_red_card_penalty(red_cards_df: pd.DataFrame, match_id: str) -> flo
     
     # Apply penalty based on when the red card occurred
     if earliest_red_minute > 80:
-        return 0.7
+        return 0.85
     elif earliest_red_minute > 70:
-        return 0.6
+        return 0.75
     elif earliest_red_minute > 60:
-        return 0.5
+        return 0.65
     elif earliest_red_minute > 45:
-        return 0.4
+        return 0.5
     elif earliest_red_minute > 30:
-        return 0.25
+        return 0.35
     elif earliest_red_minute > 15:
-        return 0.1
+        return 0.2
     else:  # Red card in first 15 minutes
-        return 0.025
+        return 0.05
 
 def create_weighted_scoreline_data(match_df: pd.DataFrame, 
                                  shot_df: pd.DataFrame,

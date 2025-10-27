@@ -7,6 +7,7 @@ from curl_cffi import requests
 
 LEAGUES = [
     {"id": 47, "name": "Premier_League", "season_type": "winter"},
+    {"id": 46, "name": "Superligaen", "season_type": "winter"}
     #{"id": 48, "name": "Championship", "season_type": "winter"},
     #{"id": 87, "name": "La_Liga", "season_type": "winter"},
     #{"id": 59, "name": "Eliteserien", "season_type": "summer"},
