@@ -24,12 +24,107 @@ except ModuleNotFoundError:
 
 
 from selenium import webdriver
-from selenium.common.exceptions import NoSuchElementException, WebDriverException
+from selenium.common.exceptions import NoSuchElementException, WebDriverException, ElementClickInterceptedException, TimeoutException
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 # options = webdriver.FirefoxOptions()
 
 # options.add_experimental_option('excludeSwitches', ['enable-logging'])
+
+
+def dismiss_overlays(driver, wait_time=3):
+    """
+    Dismiss any overlays/popups that might block interactions on WhoScored
+    
+    Args:
+        driver: Selenium WebDriver instance
+        wait_time (int): Time to wait for overlays to appear
+    
+    Returns:
+        bool: True if any overlays were dismissed
+    """
+    dismissed_any = False
+    
+    try:
+        # Wait a bit for overlays to load
+        time.sleep(wait_time)
+        
+        # Strategy 1: Close cookie consent banners - multiple selectors
+        cookie_selectors = [
+            "//button[contains(translate(., 'ACCEPT', 'accept'), 'accept')]",
+            "//button[contains(@class, 'css-gweyaj')]",
+            "//button[@class=' css-gweyaj']",
+            "//div[contains(@class, 'qc-cmp2')]//button[contains(., 'AGREE')]",
+            "//div[contains(@class, 'qc-cmp2')]//button[contains(., 'CONTINUE')]",
+        ]
+        
+        for selector in cookie_selectors:
+            try:
+                elements = driver.find_elements(By.XPATH, selector)
+                for element in elements:
+                    if element.is_displayed():
+                        try:
+                            element.click()
+                            print(f"✓ Dismissed overlay using selector: {selector[:50]}...")
+                            dismissed_any = True
+                            time.sleep(1)
+                        except ElementClickInterceptedException:
+                            # Try JavaScript click if regular click fails
+                            driver.execute_script("arguments[0].click();", element)
+                            print(f"✓ Dismissed overlay using JS click")
+                            dismissed_any = True
+                            time.sleep(1)
+            except Exception:
+                pass
+        
+        # Strategy 2: Close any modal overlays or dialogs
+        modal_selectors = [
+            "//button[contains(@aria-label, 'close')]",
+            "//button[contains(@aria-label, 'Close')]",
+            "//button[contains(@class, 'close')]",
+            "//div[contains(@class, 'enlWCx')]//button",
+            "//*[@class='enlWCx']//button",
+        ]
+        
+        for selector in modal_selectors:
+            try:
+                elements = driver.find_elements(By.XPATH, selector)
+                for element in elements:
+                    if element.is_displayed():
+                        try:
+                            element.click()
+                            print(f"✓ Dismissed modal using selector: {selector[:50]}...")
+                            dismissed_any = True
+                            time.sleep(1)
+                        except ElementClickInterceptedException:
+                            driver.execute_script("arguments[0].click();", element)
+                            print(f"✓ Dismissed modal using JS click")
+                            dismissed_any = True
+                            time.sleep(1)
+            except Exception:
+                pass
+        
+        # Strategy 3: Remove overlay divs that might be blocking clicks
+        try:
+            overlay_divs = driver.find_elements(By.XPATH, 
+                "//div[contains(@class, 'overlay') or contains(@class, 'modal') or contains(@class, 'popup')]")
+            for div in overlay_divs:
+                if div.is_displayed():
+                    driver.execute_script("arguments[0].remove();", div)
+                    print("✓ Removed overlay div")
+                    dismissed_any = True
+        except Exception:
+            pass
+            
+    except Exception as e:
+        print(f"Note: Overlay dismissal attempted: {e}")
+    
+    if dismissed_any:
+        print("✓ Successfully dismissed overlays")
+    
+    return dismissed_any
 
 
 TRANSLATE_DICT = {'Jan': 'Jan',
@@ -69,6 +164,10 @@ def getLeagueUrls(minimize_window=True):
         driver.minimize_window()
 
     driver.get(main_url)
+    
+    # Dismiss overlays right after loading the page
+    dismiss_overlays(driver)
+    
     league_names = []
     league_urls = []
     try:
@@ -76,12 +175,12 @@ def getLeagueUrls(minimize_window=True):
     except NoSuchElementException:
         pass
     tournaments_btn = driver.find_element(By.XPATH, '//*[@id="All-Tournaments-btn"]').click()
-    n_button = soup(driver.find_element(By.XPATH, '//*[@id="header-wrapper"]/div/div/div/div[4]/div[2]/div/div/div/div[1]/div/div').get_attribute('innerHTML')).find_all('button')
+    n_button = soup(driver.find_element(By.XPATH, '//*[@id="header-wrapper"]/div/div/div/div[4]/div[2]/div/div/div/div[1]/div/div').get_attribute('innerHTML'), features='lxml').find_all('button')
     n_tournaments = []
     for button in n_button:
         id_button = button.get('id')
         driver.find_element(By.ID, id_button).click()
-        n_country = soup(driver.find_element(By.XPATH, '//*[@id="header-wrapper"]/div/div/div/div[4]/div[2]/div/div/div/div[2]').get_attribute('innerHTML')).find_all('div', {'class':'TournamentsDropdownMenu-module_countryDropdownContainer__I9P6n'})
+        n_country = soup(driver.find_element(By.XPATH, '//*[@id="header-wrapper"]/div/div/div/div[4]/div[2]/div/div/div/div[2]').get_attribute('innerHTML'), features='lxml').find_all('div', {'class':'TournamentsDropdownMenu-module_countryDropdownContainer__I9P6n'})
 
         for country in n_country:
             country_id = country.find('div', {'class': 'TournamentsDropdownMenu-module_countryDropdown__8rtD-'}).get('id')
@@ -117,9 +216,7 @@ def getLeagueUrls(minimize_window=True):
 
 
 def getMatchUrls(comp_urls, competition, season, maximize_window=True):
-    from selenium.webdriver.support.ui import Select, WebDriverWait
-    from selenium.webdriver.support import expected_conditions as EC
-    from selenium.common.exceptions import TimeoutException, NoSuchElementException
+    from selenium.webdriver.support.ui import Select
     
     # Run in headless mode
     options = webdriver.FirefoxOptions()
@@ -134,20 +231,22 @@ def getMatchUrls(comp_urls, competition, season, maximize_window=True):
     driver.get(comp_url)
     time.sleep(5)
     
-    # Try to close any overlays/popups that might be blocking elements
-    try:
-        overlay_close = WebDriverWait(driver, 3).until(
-            EC.element_to_be_clickable((By.CSS_SELECTOR, ".enlWCx button, [aria-label*='close'], .enlWCx [aria-label*='Close']"))
-        )
-        overlay_close.click()
-        time.sleep(1)
-    except TimeoutException:
-        pass  # No overlay found
+    # CRITICAL: Dismiss overlays IMMEDIATELY after page load
+    print("Attempting to dismiss overlays...")
+    dismiss_overlays(driver, wait_time=2)
+    
+    # Additional wait after overlay dismissal
+    time.sleep(2)
     
     # Wait for seasons dropdown
-    select_element = WebDriverWait(driver, 10).until(
-        EC.presence_of_element_located((By.ID, "seasons"))
-    )
+    try:
+        select_element = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.ID, "seasons"))
+        )
+    except TimeoutException:
+        print("ERROR: Could not find seasons dropdown")
+        driver.close()
+        return []
     
     seasons = driver.find_element(By.XPATH, '//*[@id="seasons"]').get_attribute('innerHTML').split(sep='\n')
     seasons = [i for i in seasons if i]
@@ -161,14 +260,6 @@ def getMatchUrls(comp_urls, competition, season, maximize_window=True):
             # Use Select class for more reliable dropdown handling
             select = Select(select_element)
             select.select_by_visible_text(season)
-            
-            # Alternative: if Select doesn't work, try this JavaScript approach
-            # option = driver.find_element(By.XPATH, '//*[@id="seasons"]/option['+str(i)+']')
-            # driver.execute_script("""
-            #     arguments[0].selected = true;
-            #     var event = new Event('change', { bubbles: true });
-            #     arguments[0].parentElement.dispatchEvent(event);
-            # """, option)
             
             # Wait longer for page to fully reload after season change
             time.sleep(8)
@@ -222,6 +313,7 @@ def getMatchUrls(comp_urls, competition, season, maximize_window=True):
                 
                 except (NoSuchElementException, TimeoutException):
                     # No stages element - proceed directly to getting fixture data
+                    print("No stages dropdown found, getting fixtures directly...")
                     all_urls = []
                     
                     driver.execute_script("window.scrollTo(0, 400)")
@@ -295,9 +387,15 @@ def getMatchesData(match_urls, minimize_window=True):
 
 
 def getFixtureData(driver):
+    """Get fixture data with robust overlay handling"""
     matches_ls = []
-    while True:
+    iteration_count = 0
+    max_iterations = 100  # Safety limit
+    
+    while iteration_count < max_iterations:
+        iteration_count += 1
         initial = driver.page_source
+        
         all_fixtures = driver.find_elements(By.CLASS_NAME, 'Accordion-module_accordion__UuHD0')
         for dates in all_fixtures:
             fixtures = dates.find_elements(By.CLASS_NAME, 'Match-module_row__zwBOn')
@@ -305,7 +403,6 @@ def getFixtureData(driver):
             for row in fixtures:
                 url = row.find_element(By.TAG_NAME, 'a')
                 if 'live' in url.get_attribute('href'):
-                    # print(url.get_attribute('href'))
                     match_dict = {}
                     element = soup(row.get_attribute('innerHTML'), features='lxml')
                     teams_tag = element.find("div", {"class":"Match-module_teams__sGVeq"})
@@ -315,15 +412,52 @@ def getFixtureData(driver):
                     match_dict['away'] = teams_tag.find_all('a')[1].text
                     match_dict['score'] = ':'.join([t.text for t in link_tag.find_all('span')])
                     match_dict['url'] = link_tag['href']
-                    # print(match_dict)
                     matches_ls.append(match_dict)
-        prev_btn = driver.find_element(By.ID, 'dayChangeBtn-prev')
-        prev_btn.click()
-        time.sleep(1)
-        final = driver.page_source
-        if initial == final:
+        
+        # Try to click the previous button with multiple strategies
+        try:
+            prev_btn = WebDriverWait(driver, 5).until(
+                EC.presence_of_element_located((By.ID, 'dayChangeBtn-prev'))
+            )
+            
+            # Strategy 1: Regular click
+            try:
+                prev_btn.click()
+                time.sleep(2)
+            except ElementClickInterceptedException:
+                # Strategy 2: Scroll into view and click
+                try:
+                    driver.execute_script("arguments[0].scrollIntoView(true);", prev_btn)
+                    time.sleep(1)
+                    prev_btn.click()
+                    time.sleep(2)
+                except ElementClickInterceptedException:
+                    # Strategy 3: Dismiss overlays and try again
+                    print("Button blocked, dismissing overlays...")
+                    dismiss_overlays(driver, wait_time=1)
+                    time.sleep(1)
+                    try:
+                        prev_btn.click()
+                        time.sleep(2)
+                    except ElementClickInterceptedException:
+                        # Strategy 4: JavaScript click
+                        print("Using JavaScript click...")
+                        driver.execute_script("arguments[0].click();", prev_btn)
+                        time.sleep(2)
+            
+            final = driver.page_source
+            if initial == final:
+                print(f"Reached end of fixtures after {iteration_count} iterations")
+                break
+                
+        except TimeoutException:
+            print("Previous button not found, ending iteration")
+            break
+        except Exception as e:
+            print(f"Error during pagination: {e}")
             break
 
+    print(f"Collected {len(matches_ls)} total fixtures")
     return matches_ls
 
 
@@ -655,17 +789,3 @@ def addEpvToDataFrame(data):
     data.rename(columns={'EPV_difference': 'EPV'}, inplace=True)
     
     return data
-
-
-
-
-
-
-
-
-
-
-
-
-
-
