@@ -177,8 +177,8 @@ def process_epv_data(start_date, end_date, competition='england-premier-league',
 # Main execution
 if __name__ == "__main__":
     # Default values when running the script directly
-    start_date = datetime(2025, 10, 27)
-    end_date = datetime(2025, 11, 17)
+    start_date = datetime(2025, 11, 25)
+    end_date = datetime(2025, 12, 1)
     
     print("=" * 60)
     print("🏆 WhoScored EPV Data Scraper")
