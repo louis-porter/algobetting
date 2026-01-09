@@ -187,7 +187,8 @@ def getLeagueUrls(minimize_window=True):
 
             # Trouver l'élément avec Selenium et cliquer dessus
             country_element = driver.find_element(By.ID, country_id)
-            country_element.click()
+            driver.execute_script("arguments[0].click();", country_element)
+            time.sleep(0.5)
 
             html_tournaments_list = driver.find_element(By.XPATH, '//*[@id="header-wrapper"]/div/div/div/div[4]/div[2]/div/div/div/div[2]').get_attribute('innerHTML')
 

@@ -7,7 +7,7 @@ from curl_cffi import requests
 
 LEAGUES = [
     {"id": 47, "name": "Premier_League", "season_type": "winter"},
-    {"id": 46, "name": "Superligaen", "season_type": "winter"}
+    #{"id": 46, "name": "Superligaen", "season_type": "winter"}
     #{"id": 48, "name": "Championship", "season_type": "winter"},
     #{"id": 87, "name": "La_Liga", "season_type": "winter"},
     #{"id": 59, "name": "Eliteserien", "season_type": "summer"},
@@ -87,7 +87,9 @@ def store_season(session, league, season_start):
 def main():
     xmas = input("Paste in xmas: ")
     HEADERS = {
-        "x-mas": xmas
+        "x-mas": xmas,
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+        "Referer": "https://www.fotmob.com/",
     }
     with requests.Session() as session:
         session.headers.update(HEADERS)
