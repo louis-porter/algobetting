@@ -388,6 +388,6 @@ def main(season, league, folder_path=None):
 # Main execution
 if __name__ == "__main__":
     # Default values when running the script directly
-    season = "2025-2026"
+    season = "2021-2022"
     league = "Premier_League"
     main(season, league)

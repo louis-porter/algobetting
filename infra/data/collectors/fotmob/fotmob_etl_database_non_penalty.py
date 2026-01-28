@@ -335,11 +335,13 @@ def save_to_database(shots_df, red_cards_df, matches_df, match_stats_df, penalti
     red_cards_df["season"] = season
     matches_df["season"] = season
     match_stats_df["season"] = season
+    penalties_df['season'] = season
 
     shots_df["league_id"] = league
     red_cards_df["league_id"] = league
     matches_df["league_id"] = league
     match_stats_df["league_id"] = league
+    penalties_df['league_id'] = league
 
     # Connect to SQLite database (creates it if it doesn't exist)
     conn = sqlite3.connect(db_name)
