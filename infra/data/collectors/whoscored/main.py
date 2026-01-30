@@ -4,6 +4,8 @@ Created on Wed Oct 14 14:20:02 2020
 
 @author: aliha
 @twitter: rockingAli5 
+
+UPDATED: Fixed overlay/popup blocking issues with safe_click and enhanced dismiss_overlays
 """
 
 import warnings
@@ -24,14 +26,85 @@ except ModuleNotFoundError:
 
 
 from selenium import webdriver
+from selenium.webdriver.firefox.options import Options
 from selenium.common.exceptions import NoSuchElementException, WebDriverException, ElementClickInterceptedException, TimeoutException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
-# options = webdriver.FirefoxOptions()
 
-# options.add_experimental_option('excludeSwitches', ['enable-logging'])
+def create_driver_with_options(headless=False, minimize=False):
+    """
+    Create a Firefox WebDriver with settings to prevent popup overlays.
+    
+    Args:
+        headless (bool): Run browser in headless mode
+        minimize (bool): Minimize browser window
+        
+    Returns:
+        webdriver.Firefox: Configured Firefox driver
+    """
+    options = Options()
+    
+    # Disable push notifications that can block clicks
+    options.set_preference("dom.webnotifications.enabled", False)
+    options.set_preference("dom.push.enabled", False)
+    
+    # Disable other potential popups
+    options.set_preference("dom.webnotifications.serviceworker.enabled", False)
+    options.set_preference("dom.serviceWorkers.enabled", False)
+    
+    if headless:
+        options.add_argument('--headless')
+    
+    driver = webdriver.Firefox(options=options)
+    
+    if minimize and not headless:
+        driver.minimize_window()
+    
+    return driver
+
+
+def safe_click(driver, element, max_attempts=3):
+    """
+    Safely click an element, handling overlay interceptions with multiple strategies.
+    
+    Args:
+        driver: Selenium WebDriver instance
+        element: WebElement to click
+        max_attempts (int): Maximum number of click attempts
+        
+    Returns:
+        bool: True if click succeeded, False otherwise
+    """
+    for attempt in range(max_attempts):
+        try:
+            element.click()
+            return True
+        except ElementClickInterceptedException:
+            print(f"⚠️  Click blocked by overlay (attempt {attempt + 1}/{max_attempts})")
+            
+            # Try to dismiss any overlays
+            dismiss_overlays(driver, wait_time=1)
+            time.sleep(1)
+            
+            # On last attempt, try JavaScript click as fallback
+            if attempt == max_attempts - 1:
+                print("💡 Trying JavaScript click as fallback...")
+                try:
+                    driver.execute_script("arguments[0].click();", element)
+                    print("✅ JavaScript click succeeded")
+                    return True
+                except Exception as e:
+                    print(f"❌ JavaScript click failed: {e}")
+                    return False
+        except Exception as e:
+            print(f"❌ Unexpected error during click: {e}")
+            if attempt == max_attempts - 1:
+                return False
+            time.sleep(1)
+    
+    return False
 
 
 def dismiss_overlays(driver, wait_time=3):
@@ -86,6 +159,8 @@ def dismiss_overlays(driver, wait_time=3):
             "//button[contains(@class, 'close')]",
             "//div[contains(@class, 'enlWCx')]//button",
             "//*[@class='enlWCx']//button",
+            "//button[contains(@class, 'webpush-swal2-close')]",
+            "//button[contains(@class, 'swal2-close')]",
         ]
         
         for selector in modal_selectors:
@@ -109,7 +184,7 @@ def dismiss_overlays(driver, wait_time=3):
         # Strategy 3: Remove overlay divs that might be blocking clicks
         try:
             overlay_divs = driver.find_elements(By.XPATH, 
-                "//div[contains(@class, 'overlay') or contains(@class, 'modal') or contains(@class, 'popup')]")
+                "//div[contains(@class, 'overlay') or contains(@class, 'modal') or contains(@class, 'popup') or contains(@class, 'webpush')]")
             for div in overlay_divs:
                 if div.is_displayed():
                     driver.execute_script("arguments[0].remove();", div)
@@ -155,53 +230,95 @@ TRANSLATE_DICT = {'Jan': 'Jan',
 main_url = 'https://1xbet.whoscored.com/'
 
 
-
 def getLeagueUrls(minimize_window=True):
+    """
+    Scrape league URLs from WhoScored with enhanced overlay handling.
     
-    driver = webdriver.Firefox()
-
-    if minimize_window:
-        driver.minimize_window()
+    Args:
+        minimize_window (bool): Whether to minimize the browser window
+        
+    Returns:
+        dict: Dictionary of league names and their URLs
+    """
+    # Use the new driver creation function with notification blocking
+    driver = create_driver_with_options(minimize=minimize_window)
 
     driver.get(main_url)
     
+    # Wait for page to load
+    time.sleep(3)
+    
     # Dismiss overlays right after loading the page
-    dismiss_overlays(driver)
+    dismiss_overlays(driver, wait_time=2)
     
     league_names = []
     league_urls = []
+    
+    # Try to click cookie button if it exists
     try:
-        cookie_button = driver.find_element(By.XPATH, '//*[@class=" css-gweyaj"]').click()
+        cookie_button = driver.find_element(By.XPATH, '//*[@class=" css-gweyaj"]')
+        safe_click(driver, cookie_button)
     except NoSuchElementException:
         pass
-    tournaments_btn = driver.find_element(By.XPATH, '//*[@id="All-Tournaments-btn"]').click()
+    
+    # Click tournaments button using safe_click
+    try:
+        tournaments_btn = driver.find_element(By.XPATH, '//*[@id="All-Tournaments-btn"]')
+        if not safe_click(driver, tournaments_btn):
+            print("❌ Failed to click tournaments button")
+            driver.close()
+            return {}
+    except NoSuchElementException:
+        print("❌ Tournaments button not found")
+        driver.close()
+        return {}
+    
+    time.sleep(1)
+    
+    # Get alphabet buttons
     n_button = soup(driver.find_element(By.XPATH, '//*[@id="header-wrapper"]/div/div/div/div[4]/div[2]/div/div/div/div[1]/div/div').get_attribute('innerHTML'), features='lxml').find_all('button')
     n_tournaments = []
+    
     for button in n_button:
         id_button = button.get('id')
-        driver.find_element(By.ID, id_button).click()
-        n_country = soup(driver.find_element(By.XPATH, '//*[@id="header-wrapper"]/div/div/div/div[4]/div[2]/div/div/div/div[2]').get_attribute('innerHTML'), features='lxml').find_all('div', {'class':'TournamentsDropdownMenu-module_countryDropdownContainer__I9P6n'})
-
-        for country in n_country:
-            country_id = country.find('div', {'class': 'TournamentsDropdownMenu-module_countryDropdown__8rtD-'}).get('id')
-
-            # Trouver l'élément avec Selenium et cliquer dessus
-            country_element = driver.find_element(By.ID, country_id)
-            driver.execute_script("arguments[0].click();", country_element)
+        try:
+            button_element = driver.find_element(By.ID, id_button)
+            
+            # Use safe_click for alphabet buttons
+            if not safe_click(driver, button_element):
+                print(f"⚠️  Failed to click button: {id_button}")
+                continue
+            
             time.sleep(0.5)
+            
+            n_country = soup(driver.find_element(By.XPATH, '//*[@id="header-wrapper"]/div/div/div/div[4]/div[2]/div/div/div/div[2]').get_attribute('innerHTML'), features='lxml').find_all('div', {'class':'TournamentsDropdownMenu-module_countryDropdownContainer__I9P6n'})
 
-            html_tournaments_list = driver.find_element(By.XPATH, '//*[@id="header-wrapper"]/div/div/div/div[4]/div[2]/div/div/div/div[2]').get_attribute('innerHTML')
+            for country in n_country:
+                country_id = country.find('div', {'class': 'TournamentsDropdownMenu-module_countryDropdown__8rtD-'}).get('id')
 
-            # Parse le HTML avec BeautifulSoup pour trouver les liens des tournois
-            soup_tournaments = soup(html_tournaments_list, 'html.parser')
-            tournaments = soup_tournaments.find_all('a')
+                # Find the element and click using JavaScript (most reliable for dropdowns)
+                country_element = driver.find_element(By.ID, country_id)
+                driver.execute_script("arguments[0].click();", country_element)
+                time.sleep(0.5)
 
-            # Ajouter les tournois à la liste n_tournaments
-            n_tournaments.extend(tournaments)
+                html_tournaments_list = driver.find_element(By.XPATH, '//*[@id="header-wrapper"]/div/div/div/div[4]/div[2]/div/div/div/div[2]').get_attribute('innerHTML')
 
-            driver.execute_script("arguments[0].click();", country_element)
+                # Parse HTML with BeautifulSoup to find tournament links
+                soup_tournaments = soup(html_tournaments_list, 'html.parser')
+                tournaments = soup_tournaments.find_all('a')
 
+                # Add tournaments to the list
+                n_tournaments.extend(tournaments)
 
+                # Close country dropdown
+                driver.execute_script("arguments[0].click();", country_element)
+                time.sleep(0.3)
+                
+        except Exception as e:
+            print(f"⚠️  Error processing button {id_button}: {e}")
+            continue
+
+    # Extract league names and URLs
     for tournament in n_tournaments:
         league_name = tournament.get('href').split('/')[-1]
         league_link = main_url[:-1]+tournament.get('href')
@@ -209,7 +326,7 @@ def getLeagueUrls(minimize_window=True):
         league_urls.append(league_link)
 
     leagues = {}
-    for name,link in zip(league_names,league_urls):
+    for name, link in zip(league_names, league_urls):
         leagues[name] = link
 
     driver.close()
@@ -217,15 +334,15 @@ def getLeagueUrls(minimize_window=True):
 
 
 def getMatchUrls(comp_urls, competition, season, maximize_window=True):
+    """
+    Get match URLs for a specific competition and season with enhanced overlay handling.
+    """
     from selenium.webdriver.support.ui import Select
     
-    # Run in headless mode
-    options = webdriver.FirefoxOptions()
-    options.add_argument('--headless')
+    # Create driver with notification blocking and headless mode
+    driver = create_driver_with_options(headless=True)
     
-    driver = webdriver.Firefox(options=options)
-    
-    if maximize_window:
+    if maximize_window and not driver.capabilities.get('moz:headless'):
         driver.maximize_window()
     
     comp_url = comp_urls[competition]
@@ -345,7 +462,6 @@ def getMatchUrls(comp_urls, competition, season, maximize_window=True):
         raise ValueError('Season Not Found.')
 
 
-
 def getTeamUrls(team, match_urls):
     
     team_data = []
@@ -358,12 +474,12 @@ def getTeamUrls(team, match_urls):
 
 
 def getMatchesData(match_urls, minimize_window=True):
-    
+    """
+    Get match data with enhanced driver configuration.
+    """
     matches = []
     
-    driver = webdriver.Firefox()
-    if minimize_window:
-        driver.minimize_window()
+    driver = create_driver_with_options(minimize=minimize_window)
     
     try:
         for i in trange(len(match_urls), desc='Getting Match Data'):
@@ -383,8 +499,6 @@ def getMatchesData(match_urls, minimize_window=True):
     driver.close()
     
     return matches
-
-
 
 
 def getFixtureData(driver):
@@ -415,36 +529,18 @@ def getFixtureData(driver):
                     match_dict['url'] = link_tag['href']
                     matches_ls.append(match_dict)
         
-        # Try to click the previous button with multiple strategies
+        # Try to click the previous button with enhanced strategies
         try:
             prev_btn = WebDriverWait(driver, 5).until(
                 EC.presence_of_element_located((By.ID, 'dayChangeBtn-prev'))
             )
             
-            # Strategy 1: Regular click
-            try:
-                prev_btn.click()
-                time.sleep(2)
-            except ElementClickInterceptedException:
-                # Strategy 2: Scroll into view and click
-                try:
-                    driver.execute_script("arguments[0].scrollIntoView(true);", prev_btn)
-                    time.sleep(1)
-                    prev_btn.click()
-                    time.sleep(2)
-                except ElementClickInterceptedException:
-                    # Strategy 3: Dismiss overlays and try again
-                    print("Button blocked, dismissing overlays...")
-                    dismiss_overlays(driver, wait_time=1)
-                    time.sleep(1)
-                    try:
-                        prev_btn.click()
-                        time.sleep(2)
-                    except ElementClickInterceptedException:
-                        # Strategy 4: JavaScript click
-                        print("Using JavaScript click...")
-                        driver.execute_script("arguments[0].click();", prev_btn)
-                        time.sleep(2)
+            # Use safe_click for more reliable clicking
+            if not safe_click(driver, prev_btn):
+                print("Could not click previous button, ending pagination")
+                break
+            
+            time.sleep(2)
             
             final = driver.page_source
             if initial == final:
@@ -460,10 +556,6 @@ def getFixtureData(driver):
 
     print(f"Collected {len(matches_ls)} total fixtures")
     return matches_ls
-
-
-
-
 
 
 def translateDate(data):
@@ -489,8 +581,6 @@ def translateDate(data):
 def getSortedData(data):
     data = sorted(data, key = lambda i: dt.strptime(i['date'], '%A, %b %d %Y'))
     return data
-    
-
 
 
 def getMatchData(driver, url, display=True, close_window=True):
@@ -503,16 +593,13 @@ def getMatchData(driver, url, display=True, close_window=True):
     # get script data from page source
     script_content = driver.find_element(By.XPATH, '//*[@id="layout-wrapper"]/script[1]').get_attribute('innerHTML')
 
-
     # clean script content
     script_content = re.sub(r"[\n\t]*", "", script_content)
     script_content = script_content[script_content.index("matchId"):script_content.rindex("}")]
 
-
     # this will give script content in list form 
     script_content_list = list(filter(None, script_content.strip().split(',            ')))
     metadata = script_content_list.pop(1) 
-
 
     # string format to json format
     match_data = json.loads(metadata[metadata.index('{'):])
@@ -520,7 +607,6 @@ def getMatchData(driver, url, display=True, close_window=True):
     values = [item[item.index(':')+1:].strip() for item in script_content_list]
     for key,val in zip(keys, values):
         match_data[key] = json.loads(val)
-
 
     # get other details about the match
     region = driver.find_element(By.XPATH, '//*[@id="breadcrumb-nav"]/span[1]').text
@@ -541,21 +627,16 @@ def getMatchData(driver, url, display=True, close_window=True):
     match_data['competitionType'] = competition_type
     match_data['competitionStage'] = competition_stage
 
-
     # sort match_data dictionary alphabetically
     match_data = OrderedDict(sorted(match_data.items()))
     match_data = dict(match_data)
     if display:
         print('Region: {}, League: {}, Season: {}, Match Id: {}'.format(region, league, season, match_data['matchId']))
     
-    
     if close_window:
         driver.close()
         
     return match_data
-
-
-
 
 
 def createEventsDF(data):
@@ -603,7 +684,6 @@ def createEventsDF(data):
     except TypeError:
         pass
 
-
     # clean isShot column
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", category=FutureWarning)
@@ -629,7 +709,6 @@ def createEventsDF(data):
     h_a_col = events_df['teamId'].map({data['home']['teamId']:'h', data['away']['teamId']:'a'})
     events_df.insert(loc=events_df.columns.get_loc("teamId")+1, column='h_a', value=h_a_col)
 
-
     # adding shot body part column
     events_df['shotBodyType'] =  np.nan
     with warnings.catch_warnings():
@@ -638,7 +717,6 @@ def createEventsDF(data):
             for j in events_df.loc[events_df.isShot==True].qualifiers.loc[i]:
                 if j['type'] == 'RightFoot' or j['type'] == 'LeftFoot' or j['type'] == 'Head' or j['type'] == 'OtherBodyPart':
                     events_df.loc[i, 'shotBodyType'] = j['type']
-
 
     # adding shot situation column
     events_df['situation'] =  np.nan
@@ -655,10 +733,7 @@ def createEventsDF(data):
     event_type_cols = pd.DataFrame({event_type: pd.Series([event_type in row for row in events_df['satisfiedEventsTypes']]) for event_type in event_types})
     events_df = pd.concat([events_df, event_type_cols], axis=1)
 
-
     return events_df
-    
-
 
 
 def createMatchesDF(data):
@@ -682,9 +757,7 @@ def createMatchesDF(data):
     return matches_df
 
 
-
-
-def load_EPV_grid(fname=r'/Users/admin/Documents/dev/algobetting/infra/data/collectors/whoscored/EPV_grid.csv'):
+def load_EPV_grid(fname=r'/Users/admin/dev/algobetting/infra/data/collectors/whoscored/EPV_grid.csv'):
     """ load_EPV_grid(fname='EPV_grid.csv')
     
     # load pregenerated EPV surface from file. 
@@ -700,10 +773,6 @@ def load_EPV_grid(fname=r'/Users/admin/Documents/dev/algobetting/infra/data/coll
     """
     epv = np.loadtxt(fname, delimiter=',')
     return epv
-
-
-
-
 
 
 def get_EPV_at_location(position,EPV,attack_direction,field_dimen=(106.,68.)):
@@ -738,9 +807,6 @@ def get_EPV_at_location(position,EPV,attack_direction,field_dimen=(106.,68.)):
         return EPV[int(iy),int(ix)]
 
 
-
-                
-
 def to_metric_coordinates_from_whoscored(data,field_dimen=(106.,68.) ):
     '''
     Convert positions from Whoscored units to meters (with origin at centre circle)
@@ -754,12 +820,10 @@ def to_metric_coordinates_from_whoscored(data,field_dimen=(106.,68.) ):
     return data
 
 
-
-
 def addEpvToDataFrame(data):
 
     # loading EPV data
-    EPV = load_EPV_grid(r'/Users/admin/Documents/dev/algobetting/infra/data/collectors/whoscored/EPV_grid.csv')
+    EPV = load_EPV_grid(r'/Users/admin/dev/algobetting/infra/data/collectors/whoscored/EPV_grid.csv')
 
     # converting opta coordinates to metric coordinates
     data = to_metric_coordinates_from_whoscored(data)
@@ -781,7 +845,6 @@ def addEpvToDataFrame(data):
             EPV_difference.append(np.nan)
     
     data = data.assign(EPV_difference = EPV_difference)
-    
     
     # dump useless columns
     drop_cols = ['x_metrica', 'endX_metrica', 'y_metrica',
