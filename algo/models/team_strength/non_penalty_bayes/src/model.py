@@ -83,21 +83,25 @@ def build_and_sample_model(train_df, n_teams, current_season=None, league=None,
         att_mu, att_sigma = process_manual_priors(manual_att_priors, n_teams, team_mapping)
         def_mu, def_sigma = process_manual_priors(manual_def_priors, n_teams, team_mapping)
 
+        # Hierarchical priors - let the data learn the spread of team abilities
+        sigma_att = pm.HalfNormal("sigma_att", sigma=1.5)
+        sigma_def = pm.HalfNormal("sigma_def", sigma=1.5)
+
         # Set up attack strength priors
         if att_mu is not None:
             att_str_raw = pm.Normal("att_str_raw", mu=att_mu, sigma=att_sigma, shape=n_teams)
         else:
-            att_str_raw = pm.Normal("att_str_raw", mu=0, sigma=1, shape=n_teams)
+            att_str_raw = pm.Normal("att_str_raw", mu=0, sigma=sigma_att, shape=n_teams)
             
         # Set up defense strength priors  
         if def_mu is not None:
             def_str_raw = pm.Normal("def_str_raw", mu=def_mu, sigma=def_sigma, shape=n_teams)
         else:
-            def_str_raw = pm.Normal("def_str_raw", mu=0, sigma=1, shape=n_teams)
+            def_str_raw = pm.Normal("def_str_raw", mu=0, sigma=sigma_def, shape=n_teams)
 
-        # Center the team strengths
-        att_str = pm.Deterministic("att_str", att_str_raw - pm.math.mean(att_str_raw))
-        def_str = pm.Deterministic("def_str", def_str_raw - pm.math.mean(def_str_raw))
+        # Center defense only (standard practice)
+        att_str = pm.Deterministic("att_str", att_str_raw)
+        def_str = pm.Deterministic("def_str", def_str_raw) #- pm.math.mean(def_str_raw))
         
         # RED CARD EFFECTS - learned from historical data but updatable with current season
         # Negative = team scores less when down a man
@@ -116,7 +120,7 @@ def build_and_sample_model(train_df, n_teams, current_season=None, league=None,
         
         # Other model components
         home_adv = pm.Normal("home_adv", mu=np.log(1.21), sigma=0.1)
-        baseline = pm.Normal("baseline", mu=np.log(1.31), sigma=0.15)  # baseline away rate
+        baseline = pm.Normal("baseline", mu=np.log(2.8), sigma=0.2)  # baseline away rate
 
         # ADJUSTED GOAL RATES WITH RED CARD EFFECTS
         # Home team scoring: reduced if home has red, increased if away has red (weaker defense)

@@ -305,7 +305,7 @@ def create_weighted_scoreline_data(match_df: pd.DataFrame,
         away_total_epv = away_epv[0] if len(away_epv) > 0 else 0
 
         # Calculate red card penalty
-        red_card_penalty = calculate_red_card_penalty(red_df, match_id)
+        #red_card_penalty = calculate_red_card_penalty(red_df, match_id)
         
         # Calculate total xG for Poisson approach
         home_total_xg = home_xg_shots.sum()
@@ -442,7 +442,7 @@ def create_weighted_scoreline_data(match_df: pd.DataFrame,
         # Apply time decay and red card penalty
         time_weight = np.exp(-decay_rate * row['days_ago'])
         for s in current_match_data:
-            s['weight'] = s['weight'] * red_card_penalty * time_weight 
+            s['weight'] = s['weight'] * time_weight #* red_card_penalty
         
         expanded_data.extend(current_match_data)
     
