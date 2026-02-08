@@ -100,8 +100,8 @@ def build_and_sample_model(train_df, n_teams, current_season=None, league=None,
             def_str_raw = pm.Normal("def_str_raw", mu=0, sigma=sigma_def, shape=n_teams)
 
         # Center defense only (standard practice)
-        att_str = pm.Deterministic("att_str", att_str_raw)
-        def_str = pm.Deterministic("def_str", def_str_raw) #- pm.math.mean(def_str_raw))
+        att_str = pm.Deterministic("att_str", att_str_raw - pm.math.mean(att_str_raw))
+        def_str = pm.Deterministic("def_str", def_str_raw - pm.math.mean(def_str_raw))
         
         # RED CARD EFFECTS - learned from historical data but updatable with current season
         # Negative = team scores less when down a man
@@ -119,8 +119,8 @@ def build_and_sample_model(train_df, n_teams, current_season=None, league=None,
         )
         
         # Other model components
-        home_adv = pm.Normal("home_adv", mu=np.log(1.21), sigma=0.1)
-        baseline = pm.Normal("baseline", mu=np.log(2.8), sigma=0.2)  # baseline away rate
+        home_adv = pm.Normal("home_adv", mu=np.log(1.175), sigma=0.05)
+        baseline = pm.Normal("baseline", mu=np.log(1.26), sigma=0.1)
 
         # ADJUSTED GOAL RATES WITH RED CARD EFFECTS
         # Home team scoring: reduced if home has red, increased if away has red (weaker defense)

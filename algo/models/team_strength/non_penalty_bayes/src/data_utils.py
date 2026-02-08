@@ -99,7 +99,7 @@ def load_football_data(db_path: str, league: Union[str, List[str]], season: str)
             epv.EPV,
             epv.season,
             epv.division as league_id
-        FROM shots red
+        FROM np_shots red
         JOIN team_id_mapping team ON team.team_id = red.teamId
         JOIN epv ON epv.team = team.team_name AND red.match_date = DATE(epv.startDate)                  
         WHERE
@@ -242,210 +242,101 @@ def create_weighted_scoreline_data(match_df: pd.DataFrame,
                                  max_goals: int = 9,
                                  min_prob_threshold: float = 0.001,
                                  decay_rate: float = 0.001,
-                                 goals_weight: float = 0.2,
-                                 xg_weight: float = 0.45,
+                                 goals_weight: float = 0.25, # The weight for 'Actual Performance'
+                                 xg_weight: float = 0.40,
                                  psxg_weight: float = 0.25,
                                  epv_weight: float = 0.1) -> pd.DataFrame:
-    """
-    Create expanded dataset with all possible scorelines using Poisson-Binomial 
-    and Poisson distributions with sophisticated weighting
     
-    Parameters:
-    -----------
-    match_df : DataFrame
-        Match results data
-    shot_df : DataFrame
-        Shot-level data with xG and psxG
-    red_df : DataFrame
-        Red card data
-    epv_df : DataFrame
-        EPV data
-    max_goals : int
-        Maximum goals to consider per team
-    min_prob_threshold : float
-        Minimum probability threshold for including scorelines
-    decay_rate : float
-        Time decay rate for match recency
-    goals_weight : float
-        Weight boost for actual scorelines
-    xg_weight : float
-        Weight for xG-based probabilities
-    psxg_weight : float
-        Weight for psxG-based probabilities
-    epv_weight : float
-        Weight for EPV-based probabilities
-        
-    Returns:
-    --------
-    pd.DataFrame : Expanded dataset with weighted scorelines
-    """
     expanded_data = []
     
     for idx, row in match_df.iterrows():
         match_id = row['match_id']
-        
-        # Get shot data for this match
         match_shots = shot_df[shot_df["match_id"] == match_id]
         
         if match_shots.empty:
-            print(f"Warning: No shot data found for match_id {match_id}")
             continue
             
-        home_xg_shots = match_shots[match_shots['side'] == 'home']['expectedGoals'].values
-        away_xg_shots = match_shots[match_shots['side'] == 'away']['expectedGoals'].values
-        home_psxg_shots = match_shots[match_shots['side'] == 'home']['expectedGoalsOnTarget'].values
-        away_psxg_shots = match_shots[match_shots['side'] == 'away']['expectedGoalsOnTarget'].values
-
-        # Get EPV data for this match
-        match_epv = epv_df[epv_df["match_id"] == match_id]
-        home_epv = match_epv[match_epv['team'] == row['home_team']]['EPV'].values
-        away_epv = match_epv[match_epv['team'] == row['away_team']]['EPV'].values
-        
-        home_total_epv = home_epv[0] if len(home_epv) > 0 else 0
-        away_total_epv = away_epv[0] if len(away_epv) > 0 else 0
-
-        # Calculate red card penalty
-        #red_card_penalty = calculate_red_card_penalty(red_df, match_id)
-        
-        # Calculate total xG for Poisson approach
-        home_total_xg = home_xg_shots.sum()
-        away_total_xg = away_xg_shots.sum()
-        
-        # Generate scorelines with Poisson-Binomial (individual shots)
-        xg_game_probs_pb = simulate_game_poisson_binomial(home_xg_shots, away_xg_shots, max_goals)
-        psxg_game_probs_pb = simulate_game_poisson_binomial(home_psxg_shots, away_psxg_shots, max_goals)
-        
-        # Generate scorelines with regular Poisson (total xG)
-        home_total_xg_probs = {i: poisson.pmf(i, home_total_xg) for i in range(max_goals + 1)}
-        away_total_xg_probs = {i: poisson.pmf(i, away_total_xg) for i in range(max_goals + 1)}
-        
-        # Generate scorelines with Poisson (EPV)
-        home_epv_probs = {i: poisson.pmf(i, home_total_epv) for i in range(max_goals + 1)}
-        away_epv_probs = {i: poisson.pmf(i, away_total_epv) for i in range(max_goals + 1)}
-        
-        # Create lookup dictionaries
-        xg_pb_prob_lookup = {(sp['home_goals'], sp['away_goals']): sp['probability'] 
-                           for sp in xg_game_probs_pb}
-        psxg_pb_prob_lookup = {(sp['home_goals'], sp['away_goals']): sp['probability'] 
-                             for sp in psxg_game_probs_pb}
-        
-        # Get actual scoreline
+        # 1. --- EXTRACT DATA ---
         actual_home = int(row['home_goals'])
         actual_away = int(row['away_goals'])
         
-        # Store match scorelines temporarily
+        home_xg_total = match_shots[match_shots['side'] == 'home']['expectedGoals'].sum()
+        away_xg_total = match_shots[match_shots['side'] == 'away']['expectedGoals'].sum()
+
+        home_psxg_shots = match_shots[match_shots['side'] == 'home']['expectedGoalsOnTarget'].values
+        away_psxg_shots = match_shots[match_shots['side'] == 'away']['expectedGoalsOnTarget'].values
+
+        match_epv = epv_df[epv_df["match_id"] == match_id]
+        home_total_epv = match_epv[match_epv['team'] == row['home_team']]['EPV'].values[0] if not match_epv.empty else 0
+        away_total_epv = match_epv[match_epv['team'] == row['away_team']]['EPV'].values[0] if not match_epv.empty else 0
+
+        # 2. --- GENERATE POISSON DISTRIBUTIONS FOR EVERY EXPERT ---
+        # This is the "Bayesian Fix": converting the actual score into a Poisson parameter
+        actual_goals_dist = {
+            (h, a): poisson.pmf(h, actual_home) * poisson.pmf(a, actual_away)
+            for h, a in product(range(max_goals + 1), range(max_goals + 1))
+        }
+        
+        xg_total_dist = {
+            (h, a): poisson.pmf(h, home_xg_total) * poisson.pmf(a, away_xg_total)
+            for h, a in product(range(max_goals + 1), range(max_goals + 1))
+        }
+
+        # PB (Poisson-Binomial) for PSxG (Individual shot quality)
+        psxg_game_probs = simulate_game_poisson_binomial(
+            np.nan_to_num(home_psxg_shots, 0.0), 
+            np.nan_to_num(away_psxg_shots, 0.0), 
+            max_goals
+        )
+        psxg_pb_lookup = {(sp['home_goals'], sp['away_goals']): sp['probability'] for sp in psxg_game_probs}
+
+        epv_dist = {
+            (h, a): poisson.pmf(h, home_total_epv) * poisson.pmf(a, away_total_epv)
+            for h, a in product(range(max_goals + 1), range(max_goals + 1))
+        }
+
+        # 3. --- BLEND AND NORMALIZE ---
         match_scorelines = []
-        
-        # Iterate through all possible scorelines
-        for home_goals in range(max_goals + 1):
-            for away_goals in range(max_goals + 1):
-                
-                # Get probabilities from different methods
-                xg_pb_prob = xg_pb_prob_lookup.get((home_goals, away_goals), 0.0)
-                psxg_pb_prob = psxg_pb_prob_lookup.get((home_goals, away_goals), 0.0)
-                xg_total_poisson_prob = home_total_xg_probs[home_goals] * away_total_xg_probs[away_goals]
-                epv_poisson_prob = home_epv_probs[home_goals] * away_epv_probs[away_goals]
-                
-                # Skip if all probabilities are negligible
-                if (xg_pb_prob < 1e-10 and xg_total_poisson_prob < 1e-10 and 
-                    psxg_pb_prob < 1e-10 and epv_poisson_prob < 1e-10):
-                    continue
-                
-                # Check if this is the actual scoreline
-                is_actual = (home_goals == actual_home and away_goals == actual_away)
-                
-                match_scorelines.append({
-                    'match_id': match_id,
-                    'league_id': row['league_id'],
-                    'match_date': row['match_date'],
-                    'home_team': row['home_team'],
-                    'away_team': row['away_team'],
-                    'home_goals': home_goals,
-                    'away_goals': away_goals,
-                    'days_ago': row['days_ago'],
-                    'is_actual': is_actual,
-                    'xg_pb_prob_raw': xg_pb_prob,
-                    'psxg_pb_prob_raw': psxg_pb_prob,
-                    'xg_total_poisson_prob_raw': xg_total_poisson_prob,
-                    'epv_poisson_prob_raw': epv_poisson_prob,
-                })
-        
-        if not match_scorelines:
-            continue
+        for home_goals, away_goals in product(range(max_goals + 1), range(max_goals + 1)):
             
-        # Filter by minimum probability threshold BEFORE normalization
-        filtered_scorelines = [
-            scoreline for scoreline in match_scorelines
-            if (scoreline['xg_pb_prob_raw'] >= min_prob_threshold or 
-                scoreline['psxg_pb_prob_raw'] >= min_prob_threshold or 
-                scoreline['xg_total_poisson_prob_raw'] >= min_prob_threshold or
-                scoreline['epv_poisson_prob_raw'] >= min_prob_threshold or 
-                scoreline['is_actual'])
-        ]
-        
-        # Normalize probabilities within the filtered set
-        total_xg_pb_prob = sum(s['xg_pb_prob_raw'] for s in filtered_scorelines)
-        total_psxg_pb_prob = sum(s['psxg_pb_prob_raw'] for s in filtered_scorelines)
-        total_xg_total_poisson_prob = sum(s['xg_total_poisson_prob_raw'] for s in filtered_scorelines)
-        total_epv_poisson_prob = sum(s['epv_poisson_prob_raw'] for s in filtered_scorelines)
-        
-        # Apply normalization and weighting
-        remaining_weight = 1.0 - goals_weight
-        current_match_data = []
-        
-        for scoreline in filtered_scorelines:
-            # Normalize probabilities
-            norm_pb_xg_prob = scoreline['xg_pb_prob_raw'] / total_xg_pb_prob if total_xg_pb_prob > 0 else 0
-            norm_pb_psxg_prob = scoreline['psxg_pb_prob_raw'] / total_psxg_pb_prob if total_psxg_pb_prob > 0 else 0
-            norm_p_xg_total_prob = scoreline['xg_total_poisson_prob_raw'] / total_xg_total_poisson_prob if total_xg_total_poisson_prob > 0 else 0
-            norm_epv_prob = scoreline['epv_poisson_prob_raw'] / total_epv_poisson_prob if total_epv_poisson_prob > 0 else 0
-            
-            # Calculate final weight
-            if scoreline['is_actual']:
-                # Actual scoreline gets boost
-                final_weight = goals_weight + (remaining_weight * (
-                    xg_weight * norm_p_xg_total_prob + 
-                    psxg_weight * norm_pb_psxg_prob +
-                    epv_weight * norm_epv_prob
-                ))
-            else:
-                # Non-actual scorelines
-                final_weight = remaining_weight * (
-                    xg_weight * norm_p_xg_total_prob + 
-                    psxg_weight * norm_pb_psxg_prob +
-                    epv_weight * norm_epv_prob
-                )
-            
-            current_match_data.append({
-                'match_id': scoreline['match_id'],
-                'league_id': row['league_id'],
-                'match_date': scoreline['match_date'].date(),
-                'home_team': scoreline['home_team'],
-                'away_team': scoreline['away_team'],
-                'home_goals': scoreline['home_goals'],
-                'away_goals': scoreline['away_goals'],
+            # Retrieve probabilities
+            p_actual = actual_goals_dist.get((home_goals, away_goals), 0.0)
+            p_xg = xg_total_dist.get((home_goals, away_goals), 0.0)
+            p_psxg = psxg_pb_lookup.get((home_goals, away_goals), 0.0)
+            p_epv = epv_dist.get((home_goals, away_goals), 0.0)
+
+            # Weight the experts
+            # No hard-coding! We sum the weighted probabilities.
+            final_weight = (
+                (goals_weight * p_actual) + 
+                (xg_weight * p_xg) + 
+                (psxg_weight * p_psxg) + 
+                (epv_weight * p_epv)
+            )
+
+            if final_weight < min_prob_threshold and not (home_goals == actual_home and away_goals == actual_away):
+                continue
+
+            match_scorelines.append({
+                'match_id': match_id,
+                'home_team': row['home_team'],
+                'away_team': row['away_team'],
+                'home_goals': home_goals,
+                'away_goals': away_goals,
                 'weight': final_weight,
-                'days_ago': scoreline['days_ago'],
-                'is_actual': scoreline['is_actual'],
-                'poisson_binomial_xg_prob': norm_pb_xg_prob,
-                'poisson_binomial_psxg_prob': norm_pb_psxg_prob,
-                'poisson_xg_total_prob': norm_p_xg_total_prob,
-                'poisson_epv_prob': norm_epv_prob
+                'days_ago': row['days_ago'],
+                'is_actual': (home_goals == actual_home and away_goals == actual_away)
             })
+
+        # Final match-level weight normalization
+        total_m_weight = sum(s['weight'] for s in match_scorelines)
+        time_decay = np.exp(-decay_rate * row['days_ago'])
         
-        # Normalize weights for this match
-        total_weight_for_match = sum(s['weight'] for s in current_match_data)
-        if total_weight_for_match > 0:
-            for s in current_match_data:
-                s['weight'] = s['weight'] / total_weight_for_match
-        
-        # Apply time decay and red card penalty
-        time_weight = np.exp(-decay_rate * row['days_ago'])
-        for s in current_match_data:
-            s['weight'] = s['weight'] * time_weight #* red_card_penalty
-        
-        expanded_data.extend(current_match_data)
-    
+        for s in match_scorelines:
+            # Normalize so the match total is 1.0, then apply time decay
+            s['weight'] = (s['weight'] / total_m_weight) * time_decay
+            expanded_data.append(s)
+
     return pd.DataFrame(expanded_data)
 
 def prepare_model_data(df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, int], int]:
