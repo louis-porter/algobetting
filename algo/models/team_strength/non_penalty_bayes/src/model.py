@@ -120,7 +120,7 @@ def build_and_sample_model(train_df, n_teams, current_season=None, league=None,
         
         # Other model components
         home_adv = pm.Normal("home_adv", mu=np.log(1.175), sigma=0.05)
-        baseline = pm.Normal("baseline", mu=np.log(1.26), sigma=0.1)
+        baseline = pm.Normal("baseline", mu=np.log(1.26), sigma=0.075)
 
         # ADJUSTED GOAL RATES WITH RED CARD EFFECTS
         # Home team scoring: reduced if home has red, increased if away has red (weaker defense)
