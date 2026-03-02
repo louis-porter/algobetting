@@ -72,7 +72,7 @@ def store_season(session, league, season_start):
         return
     print(f"    Fetching {len(to_get)} match{'es' if len(to_get) > 1 else ''}...")
 
-    with ThreadPoolExecutor(max_workers=100) as executor:
+    with ThreadPoolExecutor(max_workers=2) as executor:
         futures = [executor.submit(fetch_and_save_match, session, league["name"], season_folder, match_id) for match_id in to_get]
 
         for future in as_completed(futures):
@@ -91,7 +91,7 @@ def main():
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
         "Referer": "https://www.fotmob.com/",
     }
-    with requests.Session() as session:
+    with requests.Session(impersonate="chrome124") as session:
         session.headers.update(HEADERS)
         for league in LEAGUES:
             for season_start in range(2025, 2026):

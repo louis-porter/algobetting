@@ -263,8 +263,8 @@ def create_weighted_scoreline_data(match_df: pd.DataFrame,
         home_xg_total = match_shots[match_shots['side'] == 'home']['expectedGoals'].sum()
         away_xg_total = match_shots[match_shots['side'] == 'away']['expectedGoals'].sum()
 
-        home_psxg_shots = match_shots[match_shots['side'] == 'home']['expectedGoalsOnTarget'].values
-        away_psxg_shots = match_shots[match_shots['side'] == 'away']['expectedGoalsOnTarget'].values
+        home_psxg_shots = match_shots[match_shots['side'] == 'home']['expectedGoalsOnTarget'].values.copy()
+        away_psxg_shots = match_shots[match_shots['side'] == 'away']['expectedGoalsOnTarget'].values.copy()
 
         match_epv = epv_df[epv_df["match_id"] == match_id]
         home_total_epv = match_epv[match_epv['team'] == row['home_team']]['EPV'].values[0] if not match_epv.empty else 0
