@@ -6,6 +6,7 @@ Created on Wed Oct 14 14:20:02 2020
 @twitter: rockingAli5 
 
 UPDATED: Fixed overlay/popup blocking issues with safe_click and enhanced dismiss_overlays
+UPDATED: Fixed pandas 2.x compatibility issues
 """
 
 import warnings
@@ -34,23 +35,9 @@ from selenium.webdriver.support import expected_conditions as EC
 
 
 def create_driver_with_options(headless=False, minimize=False):
-    """
-    Create a Firefox WebDriver with settings to prevent popup overlays.
-    
-    Args:
-        headless (bool): Run browser in headless mode
-        minimize (bool): Minimize browser window
-        
-    Returns:
-        webdriver.Firefox: Configured Firefox driver
-    """
     options = Options()
-    
-    # Disable push notifications that can block clicks
     options.set_preference("dom.webnotifications.enabled", False)
     options.set_preference("dom.push.enabled", False)
-    
-    # Disable other potential popups
     options.set_preference("dom.webnotifications.serviceworker.enabled", False)
     options.set_preference("dom.serviceWorkers.enabled", False)
     
@@ -66,29 +53,14 @@ def create_driver_with_options(headless=False, minimize=False):
 
 
 def safe_click(driver, element, max_attempts=3):
-    """
-    Safely click an element, handling overlay interceptions with multiple strategies.
-    
-    Args:
-        driver: Selenium WebDriver instance
-        element: WebElement to click
-        max_attempts (int): Maximum number of click attempts
-        
-    Returns:
-        bool: True if click succeeded, False otherwise
-    """
     for attempt in range(max_attempts):
         try:
             element.click()
             return True
         except ElementClickInterceptedException:
             print(f"⚠️  Click blocked by overlay (attempt {attempt + 1}/{max_attempts})")
-            
-            # Try to dismiss any overlays
             dismiss_overlays(driver, wait_time=1)
             time.sleep(1)
-            
-            # On last attempt, try JavaScript click as fallback
             if attempt == max_attempts - 1:
                 print("💡 Trying JavaScript click as fallback...")
                 try:
@@ -108,23 +80,11 @@ def safe_click(driver, element, max_attempts=3):
 
 
 def dismiss_overlays(driver, wait_time=3):
-    """
-    Dismiss any overlays/popups that might block interactions on WhoScored
-    
-    Args:
-        driver: Selenium WebDriver instance
-        wait_time (int): Time to wait for overlays to appear
-    
-    Returns:
-        bool: True if any overlays were dismissed
-    """
     dismissed_any = False
     
     try:
-        # Wait a bit for overlays to load
         time.sleep(wait_time)
         
-        # Strategy 1: Close cookie consent banners - multiple selectors
         cookie_selectors = [
             "//button[contains(translate(., 'ACCEPT', 'accept'), 'accept')]",
             "//button[contains(@class, 'css-gweyaj')]",
@@ -144,7 +104,6 @@ def dismiss_overlays(driver, wait_time=3):
                             dismissed_any = True
                             time.sleep(1)
                         except ElementClickInterceptedException:
-                            # Try JavaScript click if regular click fails
                             driver.execute_script("arguments[0].click();", element)
                             print(f"✓ Dismissed overlay using JS click")
                             dismissed_any = True
@@ -152,7 +111,6 @@ def dismiss_overlays(driver, wait_time=3):
             except Exception:
                 pass
         
-        # Strategy 2: Close any modal overlays or dialogs
         modal_selectors = [
             "//button[contains(@aria-label, 'close')]",
             "//button[contains(@aria-label, 'Close')]",
@@ -181,7 +139,6 @@ def dismiss_overlays(driver, wait_time=3):
             except Exception:
                 pass
         
-        # Strategy 3: Remove overlay divs that might be blocking clicks
         try:
             overlay_divs = driver.find_elements(By.XPATH, 
                 "//div[contains(@class, 'overlay') or contains(@class, 'modal') or contains(@class, 'popup') or contains(@class, 'webpush')]")
@@ -214,54 +171,30 @@ TRANSLATE_DICT = {'Jan': 'Jan',
                  'Okt': 'Oct',
                  'Nov': 'Nov',
                  'Des': 'Dec',
-                 'Jan': 'Jan',
-                 'Feb': 'Feb',
                  'Mar': 'Mar',
-                 'Apr': 'Apr',
                  'May': 'May',
-                 'Jun': 'Jun',
-                 'Jul': 'Jul',
                  'Aug': 'Aug',
-                 'Sep': 'Sep',
                  'Oct': 'Oct',
-                 'Nov': 'Nov',
                  'Dec': 'Dec'}
 
 main_url = 'https://1xbet.whoscored.com/'
 
 
 def getLeagueUrls(minimize_window=True):
-    """
-    Scrape league URLs from WhoScored with enhanced overlay handling.
-    
-    Args:
-        minimize_window (bool): Whether to minimize the browser window
-        
-    Returns:
-        dict: Dictionary of league names and their URLs
-    """
-    # Use the new driver creation function with notification blocking
     driver = create_driver_with_options(minimize=minimize_window)
-
     driver.get(main_url)
-    
-    # Wait for page to load
     time.sleep(3)
-    
-    # Dismiss overlays right after loading the page
     dismiss_overlays(driver, wait_time=2)
     
     league_names = []
     league_urls = []
     
-    # Try to click cookie button if it exists
     try:
         cookie_button = driver.find_element(By.XPATH, '//*[@class=" css-gweyaj"]')
         safe_click(driver, cookie_button)
     except NoSuchElementException:
         pass
     
-    # Click tournaments button using safe_click
     try:
         tournaments_btn = driver.find_element(By.XPATH, '//*[@id="All-Tournaments-btn"]')
         if not safe_click(driver, tournaments_btn):
@@ -275,7 +208,6 @@ def getLeagueUrls(minimize_window=True):
     
     time.sleep(1)
     
-    # Get alphabet buttons
     n_button = soup(driver.find_element(By.XPATH, '//*[@id="header-wrapper"]/div/div/div/div[4]/div[2]/div/div/div/div[1]/div/div').get_attribute('innerHTML'), features='lxml').find_all('button')
     n_tournaments = []
     
@@ -284,7 +216,6 @@ def getLeagueUrls(minimize_window=True):
         try:
             button_element = driver.find_element(By.ID, id_button)
             
-            # Use safe_click for alphabet buttons
             if not safe_click(driver, button_element):
                 print(f"⚠️  Failed to click button: {id_button}")
                 continue
@@ -295,22 +226,14 @@ def getLeagueUrls(minimize_window=True):
 
             for country in n_country:
                 country_id = country.find('div', {'class': 'TournamentsDropdownMenu-module_countryDropdown__8rtD-'}).get('id')
-
-                # Find the element and click using JavaScript (most reliable for dropdowns)
                 country_element = driver.find_element(By.ID, country_id)
                 driver.execute_script("arguments[0].click();", country_element)
                 time.sleep(0.5)
 
                 html_tournaments_list = driver.find_element(By.XPATH, '//*[@id="header-wrapper"]/div/div/div/div[4]/div[2]/div/div/div/div[2]').get_attribute('innerHTML')
-
-                # Parse HTML with BeautifulSoup to find tournament links
                 soup_tournaments = soup(html_tournaments_list, 'html.parser')
                 tournaments = soup_tournaments.find_all('a')
-
-                # Add tournaments to the list
                 n_tournaments.extend(tournaments)
-
-                # Close country dropdown
                 driver.execute_script("arguments[0].click();", country_element)
                 time.sleep(0.3)
                 
@@ -318,7 +241,6 @@ def getLeagueUrls(minimize_window=True):
             print(f"⚠️  Error processing button {id_button}: {e}")
             continue
 
-    # Extract league names and URLs
     for tournament in n_tournaments:
         league_name = tournament.get('href').split('/')[-1]
         league_link = main_url[:-1]+tournament.get('href')
@@ -334,12 +256,8 @@ def getLeagueUrls(minimize_window=True):
 
 
 def getMatchUrls(comp_urls, competition, season, maximize_window=True):
-    """
-    Get match URLs for a specific competition and season with enhanced overlay handling.
-    """
     from selenium.webdriver.support.ui import Select
     
-    # Create driver with notification blocking and headless mode
     driver = create_driver_with_options(headless=True)
     
     if maximize_window and not driver.capabilities.get('moz:headless'):
@@ -349,14 +267,10 @@ def getMatchUrls(comp_urls, competition, season, maximize_window=True):
     driver.get(comp_url)
     time.sleep(5)
     
-    # CRITICAL: Dismiss overlays IMMEDIATELY after page load
     print("Attempting to dismiss overlays...")
     dismiss_overlays(driver, wait_time=2)
-    
-    # Additional wait after overlay dismissal
     time.sleep(2)
     
-    # Wait for seasons dropdown
     try:
         select_element = WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.ID, "seasons"))
@@ -375,19 +289,14 @@ def getMatchUrls(comp_urls, competition, season, maximize_window=True):
         if driver.find_element(By.XPATH, '//*[@id="seasons"]/option['+str(i)+']').text == season:
             season_found = True
             
-            # Use Select class for more reliable dropdown handling
             select = Select(select_element)
             select.select_by_visible_text(season)
-            
-            # Wait longer for page to fully reload after season change
             time.sleep(8)
             
-            # Verify the season actually changed by checking page content
             print(f"Selected season: {season}")
             print(f"Current page URL: {driver.current_url}")
             
             try:
-                # Wait for stages element to be present (or determine it doesn't exist)
                 try:
                     stages_element = WebDriverWait(driver, 10).until(
                         EC.presence_of_element_located((By.ID, "stages"))
@@ -414,34 +323,23 @@ def getMatchUrls(comp_urls, competition, season, maximize_window=True):
                             should_click = True
                         
                         if should_click:
-                            # Use Select for stages too
                             stage_select = Select(driver.find_element(By.ID, "stages"))
                             stage_select.select_by_visible_text(stage_text)
                             time.sleep(8)
                         
                             driver.execute_script("window.scrollTo(0, 400)")
-                            
                             match_urls = getFixtureData(driver)
-                            
                             match_urls = getSortedData(match_urls)
-                            
                             match_urls2 = [url for url in match_urls if '?' not in url['date'] and '\n' not in url['date']]
-                            
                             all_urls += match_urls2
                 
                 except (NoSuchElementException, TimeoutException):
-                    # No stages element - proceed directly to getting fixture data
                     print("No stages dropdown found, getting fixtures directly...")
                     all_urls = []
-                    
                     driver.execute_script("window.scrollTo(0, 400)")
-                    
                     match_urls = getFixtureData(driver)
-                    
                     match_urls = getSortedData(match_urls)
-                    
                     match_urls2 = [url for url in match_urls if '?' not in url['date'] and '\n' not in url['date']]
-                    
                     all_urls += match_urls2
             
             except Exception as e:
@@ -452,7 +350,6 @@ def getMatchUrls(comp_urls, competition, season, maximize_window=True):
             all_urls = getSortedData(remove_dup)
             
             driver.close() 
-    
             return all_urls
     
     if not season_found:
@@ -463,27 +360,20 @@ def getMatchUrls(comp_urls, competition, season, maximize_window=True):
 
 
 def getTeamUrls(team, match_urls):
-    
     team_data = []
     for fixture in match_urls:
         if fixture['home'] == team or fixture['away'] == team:
             team_data.append(fixture)
     team_data = [a[0] for a in itertools.groupby(team_data)]
-                
     return team_data
 
 
 def getMatchesData(match_urls, minimize_window=True):
-    """
-    Get match data with enhanced driver configuration.
-    """
     matches = []
-    
     driver = create_driver_with_options(minimize=minimize_window)
     
     try:
         for i in trange(len(match_urls), desc='Getting Match Data'):
-            # recommended to avoid getting blocked by incapsula/imperva bots
             time.sleep(7)
             match_data = getMatchData(driver, main_url+match_urls[i]['url'], display=False, close_window=False)
             match_data['home_team'] = match_urls[i]['home']
@@ -497,15 +387,13 @@ def getMatchesData(match_urls, minimize_window=True):
             matches.append(match_data)
     
     driver.close()
-    
     return matches
 
 
 def getFixtureData(driver):
-    """Get fixture data with robust overlay handling"""
     matches_ls = []
     iteration_count = 0
-    max_iterations = 100  # Safety limit
+    max_iterations = 100
     
     while iteration_count < max_iterations:
         iteration_count += 1
@@ -529,13 +417,11 @@ def getFixtureData(driver):
                     match_dict['url'] = link_tag['href']
                     matches_ls.append(match_dict)
         
-        # Try to click the previous button with enhanced strategies
         try:
             prev_btn = WebDriverWait(driver, 5).until(
                 EC.presence_of_element_located((By.ID, 'dayChangeBtn-prev'))
             )
             
-            # Use safe_click for more reliable clicking
             if not safe_click(driver, prev_btn):
                 print("Could not click previous button, ending pagination")
                 break
@@ -559,7 +445,6 @@ def getFixtureData(driver):
 
 
 def translateDate(data):
-    
     unwanted = []
     for match in data:
         date = match['date'].split()
@@ -571,15 +456,14 @@ def translateDate(data):
         else:
             unwanted.append(data.index(match))
     
-    # remove matches that got suspended/postponed
-    for i in sorted(unwanted, reverse = True):
+    for i in sorted(unwanted, reverse=True):
         del data[i]
     
     return data
 
 
 def getSortedData(data):
-    data = sorted(data, key = lambda i: dt.strptime(i['date'], '%A, %b %d %Y'))
+    data = sorted(data, key=lambda i: dt.strptime(i['date'], '%A, %b %d %Y'))
     return data
 
 
@@ -590,32 +474,24 @@ def getMatchData(driver, url, display=True, close_window=True):
         driver.get(url)
 
     time.sleep(5)
-    # get script data from page source
     script_content = driver.find_element(By.XPATH, '//*[@id="layout-wrapper"]/script[1]').get_attribute('innerHTML')
-
-    # clean script content
     script_content = re.sub(r"[\n\t]*", "", script_content)
     script_content = script_content[script_content.index("matchId"):script_content.rindex("}")]
-
-    # this will give script content in list form 
     script_content_list = list(filter(None, script_content.strip().split(',            ')))
     metadata = script_content_list.pop(1) 
-
-    # string format to json format
     match_data = json.loads(metadata[metadata.index('{'):])
     keys = [item[:item.index(':')].strip() for item in script_content_list]
     values = [item[item.index(':')+1:].strip() for item in script_content_list]
-    for key,val in zip(keys, values):
+    for key, val in zip(keys, values):
         match_data[key] = json.loads(val)
 
-    # get other details about the match
     region = driver.find_element(By.XPATH, '//*[@id="breadcrumb-nav"]/span[1]').text
     league = driver.find_element(By.XPATH, '//*[@id="breadcrumb-nav"]/a').text.split(' - ')[0]
     season = driver.find_element(By.XPATH, '//*[@id="breadcrumb-nav"]/a').text.split(' - ')[1]
     if len(driver.find_element(By.XPATH, '//*[@id="breadcrumb-nav"]/a').text.split(' - ')) == 2:
         competition_type = 'League'
         competition_stage = ''
-    elif len(driver.find_element(By.XPATH, '//*[@id="breadcrumb-nav"]/a').text.split(' - '))== 3:
+    elif len(driver.find_element(By.XPATH, '//*[@id="breadcrumb-nav"]/a').text.split(' - ')) == 3:
         competition_type = 'Knock Out'
         competition_stage = driver.find_element(By.XPATH, '//*[@id="breadcrumb-nav"]/a').text.split(' - ')[-1]
     else:
@@ -627,7 +503,6 @@ def getMatchData(driver, url, display=True, close_window=True):
     match_data['competitionType'] = competition_type
     match_data['competitionStage'] = competition_stage
 
-    # sort match_data dictionary alphabetically
     match_data = OrderedDict(sorted(match_data.items()))
     match_data = dict(match_data)
     if display:
@@ -664,15 +539,19 @@ def createEventsDF(data):
     # clean outcomeType column
     events_df['outcomeType'] = pd.json_normalize(events_df['outcomeType'])['displayName']
 
-    # clean outcomeType column
+    # clean cardType column
+    # FIX 1: Avoid chained assignment; use a full-column reassignment instead
     try:
         x = events_df['cardType'].fillna({i: {} for i in events_df.index})
-        events_df['cardType'] = pd.json_normalize(x)['displayName'].fillna(False)
+        cardType_values = pd.json_normalize(x)['displayName'].fillna(False)
+        events_df['cardType'] = cardType_values.values
     except KeyError:
         events_df['cardType'] = False
 
     eventTypeDict = data['matchCentreEventTypeJson']  
-    events_df['satisfiedEventsTypes'] = events_df['satisfiedEventsTypes'].apply(lambda x: [list(eventTypeDict.keys())[list(eventTypeDict.values()).index(event)] for event in x])
+    events_df['satisfiedEventsTypes'] = events_df['satisfiedEventsTypes'].apply(
+        lambda x: [list(eventTypeDict.keys())[list(eventTypeDict.values()).index(event)] for event in x]
+    )
 
     # clean qualifiers column
     try:
@@ -684,53 +563,61 @@ def createEventsDF(data):
     except TypeError:
         pass
 
-    # clean isShot column
+    # FIX 2: Use boolean dtype directly instead of replacing NaN then inferring
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", category=FutureWarning)
         if 'isShot' in events_df.columns:
-            events_df['isShot'] = events_df['isShot'].replace(np.nan, False).infer_objects(copy=False)
+            events_df['isShot'] = events_df['isShot'].fillna(False).astype(bool)
         else:
             events_df['isShot'] = False
 
-        # clean isGoal column
         if 'isGoal' in events_df.columns:
-            events_df['isGoal'] = events_df['isGoal'].replace(np.nan, False).infer_objects(copy=False)
+            events_df['isGoal'] = events_df['isGoal'].fillna(False).astype(bool)
         else:
             events_df['isGoal'] = False
 
-    # add player name column
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", category=FutureWarning)
-        events_df.loc[events_df.playerId.notna(), 'playerId'] = events_df.loc[events_df.playerId.notna(), 'playerId'].astype(int).astype(str)    
-    player_name_col = events_df.loc[:, 'playerId'].map(data['playerIdNameDictionary']) 
+    # FIX 3: Original crash site — use apply instead of loc setitem to avoid
+    # pandas 2.x StringArray -> float64 dtype conflict
+    events_df['playerId'] = events_df['playerId'].apply(
+        lambda x: str(int(x)) if pd.notna(x) else x
+    )
+
+    player_name_col = events_df['playerId'].map(data['playerIdNameDictionary']) 
     events_df.insert(loc=events_df.columns.get_loc("playerId")+1, column='playerName', value=player_name_col)
 
-    # add home/away column
-    h_a_col = events_df['teamId'].map({data['home']['teamId']:'h', data['away']['teamId']:'a'})
+    h_a_col = events_df['teamId'].map({data['home']['teamId']: 'h', data['away']['teamId']: 'a'})
     events_df.insert(loc=events_df.columns.get_loc("teamId")+1, column='h_a', value=h_a_col)
 
-    # adding shot body part column
-    events_df['shotBodyType'] =  np.nan
+    events_df['shotBodyType'] = None
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", category=FutureWarning)
-        for i in events_df.loc[events_df.isShot==True].index:
-            for j in events_df.loc[events_df.isShot==True].qualifiers.loc[i]:
-                if j['type'] == 'RightFoot' or j['type'] == 'LeftFoot' or j['type'] == 'Head' or j['type'] == 'OtherBodyPart':
+        # FIX 4: Use boolean comparison instead of ==True to avoid issues with
+        # nullable boolean dtypes in pandas 2.x
+        shot_index = events_df.loc[events_df['isShot'] == True].index
+        for i in shot_index:
+            for j in events_df.loc[i, 'qualifiers']:
+                if j['type'] in ('RightFoot', 'LeftFoot', 'Head', 'OtherBodyPart'):
                     events_df.loc[i, 'shotBodyType'] = j['type']
 
-    # adding shot situation column
-    events_df['situation'] =  np.nan
+    events_df['situation'] = None
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", category=FutureWarning)
-        for i in events_df.loc[events_df.isShot==True].index:
-            for j in events_df.loc[events_df.isShot==True].qualifiers.loc[i]:
-                if j['type'] == 'FromCorner' or j['type'] == 'SetPiece' or j['type'] == 'DirectFreekick':
+        # FIX 5: Same as above — consistent boolean comparison
+        for i in shot_index:
+            for j in events_df.loc[i, 'qualifiers']:
+                if j['type'] in ('FromCorner', 'SetPiece', 'DirectFreekick'):
                     events_df.loc[i, 'situation'] = j['type']
                 if j['type'] == 'RegularPlay':
-                    events_df.loc[i, 'situation'] = 'OpenPlay' 
+                    events_df.loc[i, 'situation'] = 'OpenPlay'
 
     event_types = list(data['matchCentreEventTypeJson'].keys())
-    event_type_cols = pd.DataFrame({event_type: pd.Series([event_type in row for row in events_df['satisfiedEventsTypes']]) for event_type in event_types})
+    # FIX 6: Construct boolean columns explicitly as bool dtype to avoid
+    # object-dtype ambiguity in pandas 2.x concat
+    event_type_cols = pd.DataFrame(
+        {event_type: pd.array(
+            [event_type in row for row in events_df['satisfiedEventsTypes']], dtype='boolean'
+        ) for event_type in event_types}
+    )
     events_df = pd.concat([events_df, event_type_cols], axis=1)
 
     return events_df
@@ -743,11 +630,12 @@ def createMatchesDF(data):
     if type(data) == dict:
         matches_dict = dict([(key,val) for key,val in data.items() if key in columns_req_ls])
         matches_df = pd.DataFrame(matches_dict, columns=columns_req_ls).reset_index(drop=True)
-        matches_df[['home', 'away']] = np.nan  
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", category=FutureWarning)
-            matches_df['home'].iloc[0] = [data['home']]
-            matches_df['away'].iloc[0] = [data['away']]
+        matches_df[['home', 'away']] = np.nan
+
+        # FIX 7: Avoid deprecated .iloc[0] assignment on mixed-type columns.
+        # Use .at for scalar/list cell assignment instead
+        matches_df.at[0, 'home'] = [data['home']]
+        matches_df.at[0, 'away'] = [data['away']]
     else:
         for match in data:
             matches_dict = dict([(key,val) for key,val in match.items() if key in columns_req_ls])
@@ -758,59 +646,26 @@ def createMatchesDF(data):
 
 
 def load_EPV_grid(fname=r'/Users/admin/dev/algobetting/infra/data/collectors/whoscored/EPV_grid.csv'):
-    """ load_EPV_grid(fname='EPV_grid.csv')
-    
-    # load pregenerated EPV surface from file. 
-    
-    Parameters
-    -----------
-        fname: filename & path of EPV grid (default is 'EPV_grid.csv' in the curernt directory)
-        
-    Returns
-    -----------
-        EPV: The EPV surface (default is a (32,50) grid)
-    
-    """
     epv = np.loadtxt(fname, delimiter=',')
     return epv
 
 
-def get_EPV_at_location(position,EPV,attack_direction,field_dimen=(106.,68.)):
-    """ get_EPV_at_location
-    
-    Returns the EPV value at a given (x,y) location
-    
-    Parameters
-    -----------
-        position: Tuple containing the (x,y) pitch position
-        EPV: tuple Expected Possession value grid (loaded using load_EPV_grid() )
-        attack_direction: Sets the attack direction (1: left->right, -1: right->left)
-        field_dimen: tuple containing the length and width of the pitch in meters. Default is (106,68)
-            
-    Returrns
-    -----------
-        EPV value at input position
-        
-    """
-    
-    x,y = position
-    if abs(x)>field_dimen[0]/2. or abs(y)>field_dimen[1]/2.:
-        return 0.0 # Position is off the field, EPV is zero
+def get_EPV_at_location(position, EPV, attack_direction, field_dimen=(106., 68.)):
+    x, y = position
+    if abs(x) > field_dimen[0]/2. or abs(y) > field_dimen[1]/2.:
+        return 0.0
     else:
-        if attack_direction==-1:
+        if attack_direction == -1:
             EPV = np.fliplr(EPV)
-        ny,nx = EPV.shape
+        ny, nx = EPV.shape
         dx = field_dimen[0]/float(nx)
         dy = field_dimen[1]/float(ny)
         ix = (x+field_dimen[0]/2.-0.0001)/dx
         iy = (y+field_dimen[1]/2.-0.0001)/dy
-        return EPV[int(iy),int(ix)]
+        return EPV[int(iy), int(ix)]
 
 
-def to_metric_coordinates_from_whoscored(data,field_dimen=(106.,68.) ):
-    '''
-    Convert positions from Whoscored units to meters (with origin at centre circle)
-    '''
+def to_metric_coordinates_from_whoscored(data, field_dimen=(106., 68.)):
     x_columns = [c for c in data.columns if c[-1].lower()=='x'][:2]
     y_columns = [c for c in data.columns if c[-1].lower()=='y'][:2]
     x_columns_mod = [c+'_metrica' for c in x_columns]
@@ -821,34 +676,24 @@ def to_metric_coordinates_from_whoscored(data,field_dimen=(106.,68.) ):
 
 
 def addEpvToDataFrame(data):
-
-    # loading EPV data
     EPV = load_EPV_grid(r'/Users/admin/dev/algobetting/infra/data/collectors/whoscored/EPV_grid.csv')
-
-    # converting opta coordinates to metric coordinates
     data = to_metric_coordinates_from_whoscored(data)
 
-    # calculating EPV for events
     EPV_difference = []
     for i in data.index:
         if data.loc[i, 'type'] == 'Pass' and data.loc[i, 'outcomeType'] == 'Successful':
             start_pos = (data.loc[i, 'x_metrica'], data.loc[i, 'y_metrica'])
             start_epv = get_EPV_at_location(start_pos, EPV, attack_direction=1)
-            
             end_pos = (data.loc[i, 'endX_metrica'], data.loc[i, 'endY_metrica'])
             end_epv = get_EPV_at_location(end_pos, EPV, attack_direction=1)
-            
             diff = end_epv - start_epv
             EPV_difference.append(diff)
-            
         else:
             EPV_difference.append(np.nan)
     
-    data = data.assign(EPV_difference = EPV_difference)
+    data = data.assign(EPV_difference=EPV_difference)
     
-    # dump useless columns
-    drop_cols = ['x_metrica', 'endX_metrica', 'y_metrica',
-                 'endY_metrica']
+    drop_cols = ['x_metrica', 'endX_metrica', 'y_metrica', 'endY_metrica']
     data.drop(drop_cols, axis=1, inplace=True)
     data.rename(columns={'EPV_difference': 'EPV'}, inplace=True)
     

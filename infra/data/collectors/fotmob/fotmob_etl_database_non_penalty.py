@@ -60,6 +60,10 @@ def process_json_files(folder_path):
             # Load JSON data with UTF-8 encoding
             with open(file_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
+
+            # Normalize structure - handle both flat and nested formats
+            if 'matchFacts' not in data and 'content' in data:
+                data = {**data, **data['content']}
             
             # Extract match ID and team IDs
             match_id = data['matchFacts']['matchId']
@@ -284,9 +288,10 @@ def process_json_files(folder_path):
     if all_penalties:
         penalties_df = pd.DataFrame(all_penalties)
         penalties_df['match_date'] = pd.to_datetime(penalties_df['match_date']).dt.strftime('%Y-%m-%d')
-        print(f"Created match stats DataFrame with {len(penalties_df)} rows and {len(penalties_df.columns)} columns")
+        print(f"Created penalties DataFrame with {len(penalties_df)} rows and {len(penalties_df.columns)} columns")
     else:
-        print("No match stats data found")
+        penalties_df = pd.DataFrame(columns=["match_id", "league_id", "match_date", "home_team", "home_pens", "home_pens_scored", "away_team", "away_pens", "away_pens_scored"])
+        print("No penalties data found")
 
     
     # Merge match_date into shots_df and red_cards_df
@@ -400,7 +405,6 @@ def save_to_database(shots_df, red_cards_df, matches_df, match_stats_df, penalti
         
         # Insert data with duplicate checking
         print("\nProcessing shots table:")
-        # For shots, use key columns that uniquely identify a shot (excluding xG values which may have precision issues)
         insert_without_duplicates(shots_df, 'np_shots', conn, 
                                  key_columns=['match_id', 'teamId', 'min', 'playerName', 'eventType', 'season', 'league_id'])
         
