@@ -57,6 +57,10 @@ def process_json_files(folder_path):
             # Load JSON data with UTF-8 encoding
             with open(file_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
+
+            # Normalize structure - handle both flat and nested formats
+            if 'matchFacts' not in data and 'content' in data:
+                data = {**data, **data['content']}
             
             # Extract match ID and team IDs
             match_id = data['matchFacts']['matchId']
@@ -388,6 +392,6 @@ def main(season, league, folder_path=None):
 # Main execution
 if __name__ == "__main__":
     # Default values when running the script directly
-    season = "2021-2022"
+    season = "2025-2026"
     league = "Premier_League"
     main(season, league)
