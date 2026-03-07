@@ -448,13 +448,24 @@ def getSortedData(data):
     return data
 
 
-def getMatchData(driver, url, display=True, close_window=True):
-    try:
-        driver.get(url)
-    except WebDriverException:
-        driver.get(url)
+def getMatchData(driver, url, display=True, close_window=True, max_retries=3):
+    for attempt in range(1, max_retries + 1):
+        try:
+            driver.get(url)
+        except WebDriverException:
+            driver.get(url)
 
-    time.sleep(5)
+        try:
+            WebDriverWait(driver, 15).until(
+                EC.presence_of_element_located((By.XPATH, '//*[@id="layout-wrapper"]/script[1]'))
+            )
+            break  # page loaded successfully
+        except TimeoutException:
+            print(f"\u26a0\ufe0f  Page did not load properly (attempt {attempt}/{max_retries}): {url}")
+            if attempt == max_retries:
+                raise RuntimeError(f"Failed to load match page after {max_retries} attempts: {url}")
+            time.sleep(5 * attempt)
+
     script_content = driver.find_element(By.XPATH, '//*[@id="layout-wrapper"]/script[1]').get_attribute('innerHTML')
     script_content = re.sub(r"[\n\t]*", "", script_content)
     script_content = script_content[script_content.index("matchId"):script_content.rindex("}")]

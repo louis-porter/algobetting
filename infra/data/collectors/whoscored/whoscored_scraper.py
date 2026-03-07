@@ -133,41 +133,49 @@ def prepare_match_events_df(events_df: pd.DataFrame, season_label: str, division
     - Scalar columns listed in MATCH_EVENTS_SCALAR_COLS are kept as-is (missing
       ones are added as NaN so the schema is consistent across matches).
     - 'qualifiers' and 'satisfiedEventsTypes' are JSON-serialised into text columns.
-    - Boolean event-type flag columns (e.g. 'Pass', 'BallTouch' …) are kept as
+    - Boolean event-type flag columns (e.g. 'Pass', 'BallTouch' ...) are kept as
       integers (0/1) for easy SQL querying.
     - season and division labels are appended.
+    - Built with pd.concat to avoid DataFrame fragmentation warnings.
 
     Returns a copy of the DataFrame ready for to_sql().
     """
     df = events_df.copy()
 
-    # Ensure all scalar columns exist (fill missing with NaN)
+    # ── Scalar columns ───────────────────────────────────────────────────────
+    scalar_data = {}
     for col in MATCH_EVENTS_SCALAR_COLS:
-        if col not in df.columns:
-            df[col] = None
+        scalar_data[col] = df[col] if col in df.columns else None
 
-    result = df[MATCH_EVENTS_SCALAR_COLS].copy()
-
-    # Serialise list/dict columns
+    # ── JSON-serialised list/dict columns ────────────────────────────────────
     for col in ('qualifiers', 'satisfiedEventsTypes'):
-        if col in df.columns:
-            result[col] = df[col].apply(_serialize_cell)
-        else:
-            result[col] = None
+        scalar_data[col] = df[col].apply(_serialize_cell) if col in df.columns else None
 
-    # Keep boolean event-type flag columns as int (0/1)
+    # ── Boolean event-type flag columns → int (0/1) ──────────────────────────
     scalar_and_special = set(MATCH_EVENTS_SCALAR_COLS) | {'qualifiers', 'satisfiedEventsTypes'}
     flag_cols = [c for c in df.columns if c not in scalar_and_special]
+    flag_data = {}
     for col in flag_cols:
         try:
-            result[col] = df[col].astype('boolean').fillna(False).astype(int)
+            flag_data[col] = df[col].astype('boolean').fillna(False).astype(int)
         except Exception:
-            result[col] = df[col]
+            flag_data[col] = df[col]
 
-    result['season'] = season_label
-    result['division'] = division
+    # ── Metadata ─────────────────────────────────────────────────────────────
+    meta_data = {
+        'season': season_label,
+        'division': division,
+    }
 
-    # Cast boolean columns to plain int so SQLite doesn't store them as objects
+    # Build in one concat to avoid fragmentation
+    result = pd.concat(
+        [pd.DataFrame(scalar_data, index=df.index),
+         pd.DataFrame(flag_data, index=df.index),
+         pd.DataFrame(meta_data, index=df.index)],
+        axis=1
+    )
+
+    # Ensure isShot/isGoal are plain int
     for col in ('isShot', 'isGoal'):
         if col in result.columns:
             result[col] = result[col].astype(int)
@@ -210,6 +218,14 @@ def save_match_events_to_database(
         table_exists = cursor.fetchone() is not None
 
         if table_exists:
+            # Add any new columns that exist in df_to_save but not yet in the table
+            existing_cols = {row[1] for row in cursor.execute(f"PRAGMA table_info({table_name})")}
+            for col in df_to_save.columns:
+                if col not in existing_cols:
+                    cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN \"{col}\" INTEGER DEFAULT 0")
+                    print(f"➕ Added new column '{col}' to '{table_name}'")
+            conn.commit()
+
             existing_df = pd.read_sql(
                 f"SELECT matchId, eventId FROM {table_name}", conn
             )
@@ -238,7 +254,9 @@ def save_match_events_to_database(
         print(f"✓ Match events saved to {db_name}")
 
     except Exception as e:
+        import traceback
         print(f"❌ Error saving match events to database: {e}")
+        print(traceback.format_exc())
     finally:
         conn.close()
 
@@ -406,8 +424,8 @@ def process_epv_data(start_date, end_date, season='2025/2026',
 # ─────────────────────────────────────────────
 
 if __name__ == "__main__":
-    start_date = datetime(2025, 8, 1)
-    end_date = datetime(2026, 3, 6)
+    start_date = datetime(2026, 1, 2)
+    end_date = datetime(2026, 3, 7)
     
     print("=" * 60)
     print("🏆 WhoScored EPV Data Scraper")
