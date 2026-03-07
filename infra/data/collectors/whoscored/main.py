@@ -255,22 +255,29 @@ def getLeagueUrls(minimize_window=True):
     return leagues
 
 
-def getMatchUrls(comp_urls, competition, season, maximize_window=True):
+PL_URL = 'https://1xbet.whoscored.com/regions/252/tournaments/2/england-premier-league'
+
+
+def getMatchUrls(season, start_date=None, end_date=None):
+    """
+    Fetch Premier League fixture URLs for a given season.
+    Pass start_date to stop paginating backwards once we've gone past it —
+    avoids scraping the entire season when you only need a small window.
+
+    Args:
+        season (str)          : e.g. '2025/2026'
+        start_date (datetime) : stop paginating backwards before this date
+        end_date (datetime)   : unused for pagination, kept for API consistency
+    """
     from selenium.webdriver.support.ui import Select
-    
+
     driver = create_driver_with_options(headless=True)
-    
-    if maximize_window and not driver.capabilities.get('moz:headless'):
-        driver.maximize_window()
-    
-    comp_url = comp_urls[competition]
-    driver.get(comp_url)
-    time.sleep(5)
-    
+    driver.get(PL_URL)
+    time.sleep(3)
+
     print("Attempting to dismiss overlays...")
-    dismiss_overlays(driver, wait_time=2)
-    time.sleep(2)
-    
+    dismiss_overlays(driver, wait_time=1)
+
     try:
         select_element = WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.ID, "seasons"))
@@ -279,84 +286,33 @@ def getMatchUrls(comp_urls, competition, season, maximize_window=True):
         print("ERROR: Could not find seasons dropdown")
         driver.close()
         return []
-    
+
     seasons = driver.find_element(By.XPATH, '//*[@id="seasons"]').get_attribute('innerHTML').split(sep='\n')
     seasons = [i for i in seasons if i]
-    
-    season_found = False
-    
-    for i in range(1, len(seasons)+1):
-        if driver.find_element(By.XPATH, '//*[@id="seasons"]/option['+str(i)+']').text == season:
-            season_found = True
-            
+
+    for i in range(1, len(seasons) + 1):
+        if driver.find_element(By.XPATH, f'//*[@id="seasons"]/option[{i}]').text == season:
             select = Select(select_element)
             select.select_by_visible_text(season)
-            time.sleep(8)
-            
+            time.sleep(5)
+
             print(f"Selected season: {season}")
-            print(f"Current page URL: {driver.current_url}")
-            
-            try:
-                try:
-                    stages_element = WebDriverWait(driver, 10).until(
-                        EC.presence_of_element_located((By.ID, "stages"))
-                    )
-                    stages = stages_element.get_attribute('innerHTML').split(sep='\n')
-                    stages = [i for i in stages if i]
-                    
-                    all_urls = []
-                
-                    for i in range(1, len(stages)+1):
-                        stage_option = driver.find_element(By.XPATH, '//*[@id="stages"]/option['+str(i)+']')
-                        stage_text = stage_option.text
-                        print(stage_text)
-                        
-                        should_click = False
-                        
-                        if competition == 'Champions League' or competition == 'Europa League':
-                            if 'Grp' in stage_text or 'Final Stage' in stage_text:
-                                should_click = True
-                        elif competition == 'Major League Soccer':
-                            if 'Grp. ' not in stage_text:
-                                should_click = True
-                        else:
-                            should_click = True
-                        
-                        if should_click:
-                            stage_select = Select(driver.find_element(By.ID, "stages"))
-                            stage_select.select_by_visible_text(stage_text)
-                            time.sleep(8)
-                        
-                            driver.execute_script("window.scrollTo(0, 400)")
-                            match_urls = getFixtureData(driver)
-                            match_urls = getSortedData(match_urls)
-                            match_urls2 = [url for url in match_urls if '?' not in url['date'] and '\n' not in url['date']]
-                            all_urls += match_urls2
-                
-                except (NoSuchElementException, TimeoutException):
-                    print("No stages dropdown found, getting fixtures directly...")
-                    all_urls = []
-                    driver.execute_script("window.scrollTo(0, 400)")
-                    match_urls = getFixtureData(driver)
-                    match_urls = getSortedData(match_urls)
-                    match_urls2 = [url for url in match_urls if '?' not in url['date'] and '\n' not in url['date']]
-                    all_urls += match_urls2
-            
-            except Exception as e:
-                print(f"Error processing stages: {e}")
-                all_urls = []
-            
+
+            driver.execute_script("window.scrollTo(0, 400)")
+            match_urls = getFixtureData(driver, stop_before=start_date)
+            match_urls = getSortedData(match_urls)
+            all_urls = [url for url in match_urls if '?' not in url['date'] and '\n' not in url['date']]
+
             remove_dup = [dict(t) for t in {tuple(sorted(d.items())) for d in all_urls}]
             all_urls = getSortedData(remove_dup)
-            
-            driver.close() 
+
+            driver.close()
             return all_urls
-    
-    if not season_found:
-        season_names = [re.search(r'\>(.*?)\<',season).group(1) for season in seasons]
-        driver.close() 
-        print('Seasons available: {}'.format(season_names))
-        raise ValueError('Season Not Found.')
+
+    season_names = [re.search(r'\>(.*?)\<', s).group(1) for s in seasons]
+    driver.close()
+    print('Seasons available: {}'.format(season_names))
+    raise ValueError('Season Not Found.')
 
 
 def getTeamUrls(team, match_urls):
@@ -390,49 +346,74 @@ def getMatchesData(match_urls, minimize_window=True):
     return matches
 
 
-def getFixtureData(driver):
+def getFixtureData(driver, stop_before=None):
+    """
+    Paginate backwards through fixtures, collecting match data.
+
+    Args:
+        driver      : Selenium WebDriver
+        stop_before : datetime — stop as soon as every date on the current page
+                      is earlier than this date. Pass start_date here to avoid
+                      scraping the whole season when you only need a small window.
+    """
     matches_ls = []
     iteration_count = 0
     max_iterations = 100
-    
+
     while iteration_count < max_iterations:
         iteration_count += 1
         initial = driver.page_source
-        
+
         all_fixtures = driver.find_elements(By.CLASS_NAME, 'Accordion-module_accordion__UuHD0')
+
+        page_dates = []
         for dates in all_fixtures:
             fixtures = dates.find_elements(By.CLASS_NAME, 'Match-module_row__zwBOn')
             date_row = dates.find_element(By.CLASS_NAME, 'Accordion-module_header__HqzWD')
+            date_text = date_row.text
+
+            # Try to parse the date for early-exit logic
+            if stop_before and date_text and '?' not in date_text and '\n' not in date_text:
+                try:
+                    page_dates.append(dt.strptime(date_text, '%A, %b %d %Y'))
+                except ValueError:
+                    pass
+
             for row in fixtures:
                 url = row.find_element(By.TAG_NAME, 'a')
                 if 'live' in url.get_attribute('href'):
                     match_dict = {}
                     element = soup(row.get_attribute('innerHTML'), features='lxml')
-                    teams_tag = element.find("div", {"class":"Match-module_teams__sGVeq"})
+                    teams_tag = element.find("div", {"class": "Match-module_teams__sGVeq"})
                     link_tag = element.find("a")
-                    match_dict['date'] = date_row.text
+                    match_dict['date'] = date_text
                     match_dict['home'] = teams_tag.find_all('a')[0].text
                     match_dict['away'] = teams_tag.find_all('a')[1].text
                     match_dict['score'] = ':'.join([t.text for t in link_tag.find_all('span')])
                     match_dict['url'] = link_tag['href']
                     matches_ls.append(match_dict)
-        
+
+        # Early exit: all dates on this page are before our window
+        if stop_before and page_dates and all(d < stop_before for d in page_dates):
+            print(f"✓ Reached dates before {stop_before.date()} — stopping pagination early")
+            break
+
         try:
             prev_btn = WebDriverWait(driver, 5).until(
                 EC.presence_of_element_located((By.ID, 'dayChangeBtn-prev'))
             )
-            
+
             if not safe_click(driver, prev_btn):
                 print("Could not click previous button, ending pagination")
                 break
-            
-            time.sleep(2)
-            
+
+            time.sleep(1)
+
             final = driver.page_source
             if initial == final:
                 print(f"Reached end of fixtures after {iteration_count} iterations")
                 break
-                
+
         except TimeoutException:
             print("Previous button not found, ending iteration")
             break
@@ -440,7 +421,7 @@ def getFixtureData(driver):
             print(f"Error during pagination: {e}")
             break
 
-    print(f"Collected {len(matches_ls)} total fixtures")
+    print(f"Collected {len(matches_ls)} fixtures in {iteration_count} iterations")
     return matches_ls
 
 
@@ -540,7 +521,6 @@ def createEventsDF(data):
     events_df['outcomeType'] = pd.json_normalize(events_df['outcomeType'])['displayName']
 
     # clean cardType column
-    # FIX 1: Avoid chained assignment; use a full-column reassignment instead
     try:
         x = events_df['cardType'].fillna({i: {} for i in events_df.index})
         cardType_values = pd.json_normalize(x)['displayName'].fillna(False)
@@ -563,7 +543,6 @@ def createEventsDF(data):
     except TypeError:
         pass
 
-    # FIX 2: Use boolean dtype directly instead of replacing NaN then inferring
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", category=FutureWarning)
         if 'isShot' in events_df.columns:
@@ -576,8 +555,6 @@ def createEventsDF(data):
         else:
             events_df['isGoal'] = False
 
-    # FIX 3: Original crash site — use apply instead of loc setitem to avoid
-    # pandas 2.x StringArray -> float64 dtype conflict
     events_df['playerId'] = events_df['playerId'].apply(
         lambda x: str(int(x)) if pd.notna(x) else x
     )
@@ -591,8 +568,6 @@ def createEventsDF(data):
     events_df['shotBodyType'] = None
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", category=FutureWarning)
-        # FIX 4: Use boolean comparison instead of ==True to avoid issues with
-        # nullable boolean dtypes in pandas 2.x
         shot_index = events_df.loc[events_df['isShot'] == True].index
         for i in shot_index:
             for j in events_df.loc[i, 'qualifiers']:
@@ -602,7 +577,6 @@ def createEventsDF(data):
     events_df['situation'] = None
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", category=FutureWarning)
-        # FIX 5: Same as above — consistent boolean comparison
         for i in shot_index:
             for j in events_df.loc[i, 'qualifiers']:
                 if j['type'] in ('FromCorner', 'SetPiece', 'DirectFreekick'):
@@ -611,8 +585,6 @@ def createEventsDF(data):
                     events_df.loc[i, 'situation'] = 'OpenPlay'
 
     event_types = list(data['matchCentreEventTypeJson'].keys())
-    # FIX 6: Construct boolean columns explicitly as bool dtype to avoid
-    # object-dtype ambiguity in pandas 2.x concat
     event_type_cols = pd.DataFrame(
         {event_type: pd.array(
             [event_type in row for row in events_df['satisfiedEventsTypes']], dtype='boolean'
@@ -632,8 +604,6 @@ def createMatchesDF(data):
         matches_df = pd.DataFrame(matches_dict, columns=columns_req_ls).reset_index(drop=True)
         matches_df[['home', 'away']] = np.nan
 
-        # FIX 7: Avoid deprecated .iloc[0] assignment on mixed-type columns.
-        # Use .at for scalar/list cell assignment instead
         matches_df.at[0, 'home'] = [data['home']]
         matches_df.at[0, 'away'] = [data['away']]
     else:
