@@ -240,6 +240,13 @@ def process_json_files(folder_path):
             lambda row: 'home' if row['teamId'] == row['home_team'] else 'away', 
             axis=1
         )
+
+        shots_df['eventType'] = np.where(
+            (shots_df['eventType'] == 'Goal') & (shots_df['expectedGoals'].isna()),
+            'OwnGoal',
+            shots_df['eventType']
+        )
+
         # Select and reorder columns
         shots_columns = ["match_id", "teamId", "side", "min", "playerName", "eventType", "expectedGoals", "expectedGoalsOnTarget", "situation"]
         shots_df = shots_df[[col for col in shots_columns if col in shots_df.columns]]

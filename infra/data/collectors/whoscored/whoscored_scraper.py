@@ -424,8 +424,8 @@ def process_epv_data(start_date, end_date, season='2025/2026',
 # ─────────────────────────────────────────────
 
 if __name__ == "__main__":
-    start_date = datetime(2026, 1, 2)
-    end_date = datetime(2026, 3, 7)
+    start_date = datetime(2026, 3, 8)
+    end_date = datetime(2026, 3, 17)
     
     print("=" * 60)
     print("🏆 WhoScored EPV Data Scraper")
