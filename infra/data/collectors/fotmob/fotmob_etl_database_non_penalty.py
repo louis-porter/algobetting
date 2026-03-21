@@ -251,6 +251,7 @@ def process_json_files(folder_path):
         shots_columns = ["match_id", "teamId", "side", "min", "playerName", "eventType", "expectedGoals", "expectedGoalsOnTarget", "situation"]
         shots_df = shots_df[[col for col in shots_columns if col in shots_df.columns]]
         shots_df = shots_df[shots_df['situation'] != 'Penalty']
+        shots_df['shot_rank'] = shots_df.groupby('match_id').cumcount() + 1
         print(f"Created shots DataFrame with {len(shots_df)} rows")
     else:
         shots_df = pd.DataFrame(columns=["match_id", "teamId", "side", "min", "playerName", "eventType", "expectedGoals", "expectedGoalsOnTarget"])
