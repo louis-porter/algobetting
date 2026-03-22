@@ -252,7 +252,16 @@ def process_json_files(folder_path):
         shots_df = shots_df[[col for col in shots_columns if col in shots_df.columns]]
         shots_df = shots_df[shots_df['situation'] != 'Penalty']
         shots_df['shot_rank'] = shots_df.groupby('match_id').cumcount() + 1
-        print(f"Created shots DataFrame with {len(shots_df)} rows")
+        # After shots_df is built, enrich with team names from DB
+        if not shots_df.empty:
+            try:
+                conn_lookup = sqlite3.connect("infra/data/db/fotmob.db")
+                team_name_df = pd.read_sql("SELECT team_id, team_name FROM team_id_mapping", conn_lookup)
+                conn_lookup.close()
+                shots_df = shots_df.merge(team_name_df, left_on='teamId', right_on='team_id', how='left')
+                shots_df = shots_df.drop(columns=['team_id'])
+            except Exception as e:
+                print(f"⚠️  Could not enrich team names: {e}")
     else:
         shots_df = pd.DataFrame(columns=["match_id", "teamId", "side", "min", "playerName", "eventType", "expectedGoals", "expectedGoalsOnTarget"])
         print("No shots data found")

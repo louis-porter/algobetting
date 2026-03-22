@@ -306,6 +306,12 @@ def assign_possession_ids(
     if not match_ids:
         print("⚠️  No match IDs provided for possession ID assignment")
         return
+
+    team_mapping = {
+        'Nottingham Forest': 'Nottm Forest',
+        'Manchester City': 'Man City',
+        'Manchester United': 'Man United',
+    }
  
     conn = sqlite3.connect(db_name)
     try:
@@ -327,6 +333,22 @@ def assign_possession_ids(
 
         events_df['minute'] = pd.to_numeric(events_df['minute'], errors='coerce').fillna(0).astype(int)
         events_df['second'] = pd.to_numeric(events_df['second'], errors='coerce').fillna(0).astype(int)
+
+        # Derive team name from h_a + homeTeam/awayTeam, then apply mapping
+        events_df['teamName'] = events_df['homeTeam'].where(
+            events_df['h_a'] == 'h', events_df['awayTeam']
+        ).replace(team_mapping)
+
+        # Build penalty flag before the loop so penalties don't anchor sequences
+        penalty_cols_available = [c for c in ['penaltyScored', 'keeperPenaltySaved', 'penaltyMissed'] if c in events_df.columns]
+        if penalty_cols_available:
+            events_df['_is_penalty'] = (
+                events_df[penalty_cols_available]
+                .apply(lambda col: col.astype(str).str.strip() == '1')
+                .any(axis=1)
+            )
+        else:
+            events_df['_is_penalty'] = False
  
         all_shot_possessions = []
         sequence_counter = 0
@@ -371,6 +393,10 @@ def assign_possession_ids(
                 # Only tag shots from here
                 if event_type not in SHOT_TYPES:
                     continue
+
+                # Skip penalties — don't let them anchor a possession sequence
+                if row.get('_is_penalty'):
+                    continue
  
                 last_idx = last_shot_idx.get(team_id)
                 last_time = last_shot_time.get(team_id)
@@ -397,6 +423,7 @@ def assign_possession_ids(
                     'matchId': match_id,
                     'eventId': row.get('eventId'),
                     'teamId': team_id,
+                    'teamName': row.get('teamName'),
                     'period': period,
                     'minute': row.get('minute'),
                     'second': row.get('second'),
@@ -416,23 +443,6 @@ def assign_possession_ids(
                     last_shot_time = {}
  
         result_df = pd.DataFrame(all_shot_possessions)
-
-        # Merge penalty flags back from events_df
-        penalty_cols = ['eventId', 'matchId', 'penaltyScored', 'keeperPenaltySaved', 'penaltyMissed']
-        available_penalty_cols = [c for c in penalty_cols if c in events_df.columns]
-        result_df = result_df.merge(
-            events_df[available_penalty_cols].drop_duplicates(subset=['eventId', 'matchId']),
-            on=['eventId', 'matchId'],
-            how='left'
-        )
-
-        # Filter out penalties
-        penalty_flag_cols = [c for c in ['penaltyScored', 'keeperPenaltySaved', 'penaltyMissed'] if c in result_df.columns]
-        if penalty_flag_cols:
-            penalty_mask = result_df[penalty_flag_cols].eq(1).any(axis=1)
-            result_df = result_df[~penalty_mask]
-            result_df = result_df.drop(columns=penalty_flag_cols)
-
         result_df['shot_rank'] = result_df.groupby('matchId').cumcount() + 1
  
         # ── Save with deduplication ───────────────────────────────────────────
@@ -473,50 +483,6 @@ def assign_possession_ids(
         print(traceback.format_exc())
     finally:
         conn.close()
-
-# ─────────────────────────────────────────────
-# EPV (existing)
-# ─────────────────────────────────────────────
-
-def save_epv_to_database(epv_df, db_name=r"/Users/admin/dev/algobetting/infra/data/db/fotmob.db"):
-    if epv_df.empty:
-        print("⚠️  No data to save to database (empty DataFrame)")
-        return
-    
-    conn = sqlite3.connect(db_name)
-    try:
-        table_name = 'epv'
-        cursor = conn.cursor()
-        cursor.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}'")
-        table_exists = cursor.fetchone() is not None
-        
-        if table_exists:
-            existing_df = pd.read_sql(f"SELECT * FROM {table_name}", conn)
-            check_columns = ['matchId', 'team']
-            existing_keys = set(existing_df[check_columns].apply(lambda row: tuple(row), axis=1))
-            new_rows_mask = ~epv_df[check_columns].apply(lambda row: tuple(row) in existing_keys, axis=1)
-            new_df = epv_df[new_rows_mask]
-            
-            duplicates = len(epv_df) - len(new_df)
-            if duplicates > 0:
-                print(f"⏭️  Skipped {duplicates} duplicate rows in '{table_name}'")
-            
-            if len(new_df) > 0:
-                new_df.to_sql(table_name, conn, if_exists='append', index=False)
-                print(f"✅ Inserted {len(new_df)} new rows to '{table_name}' table")
-            else:
-                print(f"ℹ️  No new rows to insert in '{table_name}' table")
-        else:
-            epv_df.to_sql(table_name, conn, if_exists='append', index=False)
-            print(f"✅ Created '{table_name}' table and inserted {len(epv_df)} rows")
-        
-        print(f"\n✓ EPV data successfully saved to {db_name}")
-        
-    except Exception as e:
-        print(f"❌ Error saving to database: {str(e)}")
-    finally:
-        conn.close()
-
 
 # ─────────────────────────────────────────────
 # MAIN PIPELINE
