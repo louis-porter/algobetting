@@ -327,21 +327,29 @@ def getTeamUrls(team, match_urls):
 def getMatchesData(match_urls, minimize_window=True):
     matches = []
     driver = create_driver_with_options(minimize=minimize_window)
-    
     try:
         for i in trange(len(match_urls), desc='Getting Match Data'):
             time.sleep(7)
-            match_data = getMatchData(driver, main_url+match_urls[i]['url'], display=False, close_window=False)
-            match_data['home_team'] = match_urls[i]['home']
-            match_data['away_team'] = match_urls[i]['away']
-            matches.append(match_data)
+            try:
+                match_data = getMatchData(driver, main_url+match_urls[i]['url'], display=False, close_window=False)
+                match_data['home_team'] = match_urls[i]['home']
+                match_data['away_team'] = match_urls[i]['away']
+                matches.append(match_data)
+            except ValueError as e:
+                print(f"\nSkipping match {match_urls[i].get('url', i)}: {e}")
+                continue
     except NameError:
         print('Recommended: \'pip install tqdm\' for a progress bar while the data gets scraped....')
-        time.sleep(7)
         for i in range(len(match_urls)):
-            match_data = getMatchData(driver, main_url+match_urls[i]['url'], display=False, close_window=False)
-            matches.append(match_data)
-    
+            time.sleep(7)
+            try:
+                match_data = getMatchData(driver, main_url+match_urls[i]['url'], display=False, close_window=False)
+                match_data['home_team'] = match_urls[i]['home']
+                match_data['away_team'] = match_urls[i]['away']
+                matches.append(match_data)
+            except ValueError as e:
+                print(f"\nSkipping match {match_urls[i].get('url', i)}: {e}")
+                continue
     driver.close()
     return matches
 

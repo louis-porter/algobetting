@@ -423,6 +423,7 @@ def assign_possession_ids(
                     'matchId': match_id,
                     'eventId': row.get('eventId'),
                     'teamId': team_id,
+                    'matchDate': row.get('startDate'),
                     'teamName': row.get('teamName'),
                     'period': period,
                     'minute': row.get('minute'),
@@ -443,6 +444,7 @@ def assign_possession_ids(
                     last_shot_time = {}
  
         result_df = pd.DataFrame(all_shot_possessions)
+        result_df['matchDate'] = pd.to_datetime(result_df['matchDate']).dt.date
         result_df['shot_rank'] = result_df.groupby('matchId').cumcount() + 1
  
         # ── Save with deduplication ───────────────────────────────────────────
@@ -487,6 +489,45 @@ def assign_possession_ids(
 # ─────────────────────────────────────────────
 # MAIN PIPELINE
 # ─────────────────────────────────────────────
+        
+def save_epv_to_database(epv_df, db_name=r"/Users/admin/dev/algobetting/infra/data/db/fotmob.db"):
+    if epv_df.empty:
+        print("⚠️  No data to save to database (empty DataFrame)")
+        return
+    
+    conn = sqlite3.connect(db_name)
+    try:
+        table_name = 'epv'
+        cursor = conn.cursor()
+        cursor.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}'")
+        table_exists = cursor.fetchone() is not None
+        
+        if table_exists:
+            existing_df = pd.read_sql(f"SELECT * FROM {table_name}", conn)
+            check_columns = ['matchId', 'team']
+            existing_keys = set(existing_df[check_columns].apply(lambda row: tuple(row), axis=1))
+            new_rows_mask = ~epv_df[check_columns].apply(lambda row: tuple(row) in existing_keys, axis=1)
+            new_df = epv_df[new_rows_mask]
+            
+            duplicates = len(epv_df) - len(new_df)
+            if duplicates > 0:
+                print(f"⏭️  Skipped {duplicates} duplicate rows in '{table_name}'")
+            
+            if len(new_df) > 0:
+                new_df.to_sql(table_name, conn, if_exists='append', index=False)
+                print(f"✅ Inserted {len(new_df)} new rows to '{table_name}' table")
+            else:
+                print(f"ℹ️  No new rows to insert in '{table_name}' table")
+        else:
+            epv_df.to_sql(table_name, conn, if_exists='append', index=False)
+            print(f"✅ Created '{table_name}' table and inserted {len(epv_df)} rows")
+        
+        print(f"\n✓ EPV data successfully saved to {db_name}")
+        
+    except Exception as e:
+        print(f"❌ Error saving to database: {str(e)}")
+    finally:
+        conn.close()
 
 def process_epv_data(start_date, end_date, season='2025/2026',
                      season_label='2025-2026', division='Premier_League'):
@@ -619,8 +660,8 @@ if __name__ == "__main__":
     print("Done.")
 
 # if __name__ == "__main__":
-#     start_date = datetime(2026, 3, 19)
-#     end_date = datetime(2026, 3, 20)
+#     start_date = datetime(2026, 3, 20)
+#     end_date = datetime(2026, 3, 23)
     
 #     print("=" * 60)
 #     print("🏆 WhoScored EPV Data Scraper")

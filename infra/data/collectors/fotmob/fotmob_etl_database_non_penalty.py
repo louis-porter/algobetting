@@ -251,7 +251,26 @@ def process_json_files(folder_path):
         shots_columns = ["match_id", "teamId", "side", "min", "playerName", "eventType", "expectedGoals", "expectedGoalsOnTarget", "situation"]
         shots_df = shots_df[[col for col in shots_columns if col in shots_df.columns]]
         shots_df = shots_df[shots_df['situation'] != 'Penalty']
+
+        def fix_own_goal_order(df):
+            df = df.reset_index(drop=True)
+            swapped = True
+            while swapped:
+                swapped = False
+                for i in range(len(df) - 1):
+                    if (df.at[i, 'eventType'] == 'OwnGoal' and
+                        df.at[i, 'min'] == df.at[i + 1, 'min'] and
+                        df.at[i, 'match_id'] == df.at[i + 1, 'match_id']):  # Stay within same match
+                        row_i = df.iloc[i].copy()
+                        row_next = df.iloc[i + 1].copy()
+                        df.iloc[i] = row_next
+                        df.iloc[i + 1] = row_i
+                        swapped = True
+            return df
+
+        shots_df = fix_own_goal_order(shots_df)
         shots_df['shot_rank'] = shots_df.groupby('match_id').cumcount() + 1
+        
         # After shots_df is built, enrich with team names from DB
         if not shots_df.empty:
             try:
