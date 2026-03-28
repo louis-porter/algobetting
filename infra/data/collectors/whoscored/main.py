@@ -257,10 +257,15 @@ def getLeagueUrls(minimize_window=True):
 
 PL_URL = 'https://1xbet.whoscored.com/regions/252/tournaments/2/england-premier-league'
 
+LEAGUE_URLS = {
+    'Premier_League': PL_URL,
+    'Superligaen': 'https://www.whoscored.com/regions/59/tournaments/1/denmark-superliga',
+}
 
-def getMatchUrls(season, start_date=None, end_date=None):
+
+def getMatchUrls(season, start_date=None, end_date=None, league_url=None):
     """
-    Fetch Premier League fixture URLs for a given season.
+    Fetch fixture URLs for a given season and league.
     Pass start_date to stop paginating backwards once we've gone past it —
     avoids scraping the entire season when you only need a small window.
 
@@ -268,11 +273,13 @@ def getMatchUrls(season, start_date=None, end_date=None):
         season (str)          : e.g. '2025/2026'
         start_date (datetime) : stop paginating backwards before this date
         end_date (datetime)   : unused for pagination, kept for API consistency
+        league_url (str)      : WhoScored league URL; defaults to Premier League
     """
     from selenium.webdriver.support.ui import Select
 
+    url = league_url or PL_URL
     driver = create_driver_with_options(headless=True)
-    driver.get(PL_URL)
+    driver.get(url)
     time.sleep(3)
 
     print("Attempting to dismiss overlays...")

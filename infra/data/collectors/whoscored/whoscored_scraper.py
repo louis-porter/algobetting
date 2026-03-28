@@ -549,9 +549,11 @@ def process_epv_data(start_date, end_date, season='2025/2026',
     print(f"🔍 Processing EPV data from {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
     print(f"📊 Season: {season}")
     print("-" * 60)
-    
+
+    league_url = main.LEAGUE_URLS.get(division)
+
     try:
-        match_urls = main.getMatchUrls(season=season, start_date=start_date, end_date=end_date)
+        match_urls = main.getMatchUrls(season=season, start_date=start_date, end_date=end_date, league_url=league_url)
     except ElementClickInterceptedException:
         print("\n❌ ERROR: Click intercepted by overlay popup")
         return pd.DataFrame()

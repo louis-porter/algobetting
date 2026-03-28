@@ -1,101 +1,131 @@
+"""
+FotMob season downloader.
+
+Finds missing match IDs automatically, opens all URLs in your real browser
+at once, then walks you through saving each one from clipboard.
+"""
+
 import json
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from glob import glob
+import subprocess
+import webbrowser
 from pathlib import Path
 
-from curl_cffi import requests
+from playwright.sync_api import sync_playwright
 
 LEAGUES = [
     {"id": 47, "name": "Premier_League", "season_type": "winter"},
-    #{"id": 46, "name": "Superligaen", "season_type": "winter"}
+    {"id": 46, "name": "Superligaen", "season_type": "winter"},
     #{"id": 48, "name": "Championship", "season_type": "winter"},
     #{"id": 87, "name": "La_Liga", "season_type": "winter"},
     #{"id": 59, "name": "Eliteserien", "season_type": "summer"},
-    # {"id": 67, "name": "Allsvenskan", "season_type": "summer"},
-    # {"id": 126, "name": "League_of_Ireland", "season_type": "summer"},
+    #{"id": 67, "name": "Allsvenskan", "season_type": "summer"},
+    #{"id": 126, "name": "League_of_Ireland", "season_type": "summer"},
 ]
+
+FIREFOX_PROFILE = str(Path.home() / "Library/Application Support/Firefox/Profiles/zx2gcfse.default-release")
 BASE_URL = "https://www.fotmob.com/api/data"
 
-# CHANGE THIS HEADER
-#HEADERS = {
-#    "x-mas": "eyJib2R5Ijp7InVybCI6Ii9hcGkvZGF0YS9tYXRjaGVzP2RhdGU9MjAyNTEwMDgmdGltZXpvbmU9RXVyb3BlJTJGTG9uZG9uJmNjb2RlMz1HQlIiLCJjb2RlIjoxNzU5OTE5ODY3NjQ3LCJmb28iOiJwcm9kdWN0aW9uOjBkYzg4ZDUyM2U2Y2Y3OWZlYzNiNzUwZGFhNDgwODkyOGYwNDliMWYifSwic2lnbmF0dXJlIjoiMzM3MkUwM0E3Q0ZDQkE0NzAxOTcyNzA2QUYwQTlGMDMifQ=="
-#}
 
-def fetch_match(session, match_id):
-    url = f"{BASE_URL}/matchDetails?matchId={match_id}"
-    r = session.get(url)
-    r.raise_for_status()
-    return r.json()["content"]
+def _get_missing_ids(league, season_str, existing):
+    """Use Playwright Firefox with real profile to fetch the fixtures list."""
+    from selenium import webdriver
+    from selenium.webdriver.firefox.options import Options
 
+    options = Options()
+    options.add_argument("-profile")
+    options.add_argument(FIREFOX_PROFILE)
+    options.add_argument("--headless")
 
-def save_match(match_data, league_folder, season_folder, match_id):
-    folder = Path(f"infra/data/json/{league_folder}/{season_folder}")
-    folder.mkdir(parents=True, exist_ok=True)
-    filepath = folder / f"{match_id}.json"
-
-    with open(filepath, "w", encoding="utf-8") as f:
-        json.dump(match_data, f, ensure_ascii=False)
-
-
-def fetch_and_save_match(session, league_folder, season_folder, match_id):
+    driver = webdriver.Firefox(options=options)
     try:
-        match_data = fetch_match(session, match_id)
-        save_match(match_data, league_folder, season_folder, match_id)
-        return match_id, True
+        driver.set_script_timeout(15)
+        driver.get("https://www.fotmob.com")
 
-    except Exception as e:
-        return match_id, str(e)
+        result = driver.execute_async_script(f"""
+            const callback = arguments[arguments.length - 1];
+            fetch('/api/data/fixtures?id={league["id"]}&season={season_str}')
+                .then(r => r.json())
+                .then(data => callback({{ok: true, data: data}}))
+                .catch(err => callback({{ok: false, error: err.toString()}}));
+        """)
+
+        if not result or not result.get("ok"):
+            raise Exception(result.get("error") if result else "No response")
+
+        fixtures = result["data"]
+        match_ids = [
+            str(x["id"]) for x in fixtures
+            if not x["status"]["cancelled"] and x["status"]["finished"]
+        ]
+        return match_ids, [m for m in match_ids if m not in existing]
+    finally:
+        driver.quit()
 
 
-def store_season(session, league, season_start):
+def _save_from_clipboard(match_id, json_dir):
+    """Read JSON from clipboard and save to file."""
+    raw = subprocess.run(["pbpaste"], capture_output=True, text=True).stdout.strip()
+    if not raw:
+        print(f"    [{match_id}] Clipboard empty, skipping.")
+        return False
+    try:
+        data = json.loads(raw)
+        if "error" in data:
+            print(f"    [{match_id}] Got error response: {data}, skipping.")
+            return False
+        out_path = json_dir / f"{match_id}.json"
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+        print(f"    [{match_id}] Saved.")
+        return True
+    except json.JSONDecodeError as e:
+        print(f"    [{match_id}] Invalid JSON: {e}")
+        return False
+
+
+def store_season(league, season_start):
     if league["season_type"] == "summer":
         season_str = str(season_start)
     else:
         season_str = f"{season_start}/{season_start + 1}"
 
     season_folder = season_str.replace("/", "-")
-    folder = f"data/{league['name']}/{season_folder}"
-
-    existing = glob(f"{folder}/*.json")  # find existing files for given league-season pair
-    existing = [x.split("/")[-1].split(".")[0] for x in existing]
-
-    url = f"{BASE_URL}/fixtures?id={league['id']}&season={season_str}"
-    r = session.get(url)
-    match_ids = [str(x["id"]) for x in r.json() if not x["status"]["cancelled"] and x["status"]["finished"]]
-    to_get = list(set(match_ids) - set(existing))
+    json_dir = Path(f"infra/data/json/{league['name']}/{season_folder}")
+    existing = {p.stem for p in json_dir.glob("*.json")} if json_dir.exists() else set()
 
     print(f"{league['name']} {season_str}")
     print(f"    {len(existing)} matches already stored")
+    print(f"    Fetching fixtures list...")
+
+    match_ids, to_get = _get_missing_ids(league, season_str, existing)
+
     print(f"    {len(match_ids)} valid matches")
-    if len(to_get) == 0:
-        print()
+    if not to_get:
+        print("    Nothing new to fetch.\n")
         return
-    print(f"    Fetching {len(to_get)} match{'es' if len(to_get) > 1 else ''}...")
 
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        futures = [executor.submit(fetch_and_save_match, session, league["name"], season_folder, match_id) for match_id in to_get]
+    print(f"\n    {len(to_get)} missing match{'es' if len(to_get) > 1 else ''}.")
+    print("    Opening all URLs in your browser now...")
 
-        for future in as_completed(futures):
-            match_id, result = future.result()
-            if result is not True:
-                print(f"Error fetching match {match_id}: {result}")
+    json_dir.mkdir(parents=True, exist_ok=True)
+    urls = [f"{BASE_URL}/matchDetails?matchId={m}" for m in to_get]
+    for url in urls:
+        webbrowser.open(url)
 
-    print("Done\n")
-    return
+    print(f"\n    For each tab: Cmd+A, Cmd+C, then press Enter here.")
+    print("    (If Cloudflare blocks a tab, skip it with just Enter.)\n")
+
+    for match_id in to_get:
+        input(f"    [{match_id}] Ready (Cmd+A, Cmd+C done)? Press Enter... ")
+        _save_from_clipboard(match_id, json_dir)
+
+    print("\nDone\n")
 
 
 def main():
-    xmas = input("Paste in xmas: ")
-    HEADERS = {
-        "x-mas": xmas,
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-        "Referer": "https://www.fotmob.com/",
-    }
-    with requests.Session(impersonate="chrome124") as session:
-        session.headers.update(HEADERS)
-        for league in LEAGUES:
-            for season_start in range(2025, 2026):
-                store_season(session, league, season_start)
+    for league in LEAGUES:
+        for season_start in range(2025, 2026):
+            store_season(league, season_start)
 
 
 if __name__ == "__main__":
