@@ -41,13 +41,21 @@ fm.fontManager.addfont('/Users/admin/Library/Fonts/Roboto-Regular.ttf')
 fm.fontManager.addfont('/Users/admin/Library/Fonts/Roboto-Bold.ttf')
 plt.rcParams['font.family'] = 'Roboto'
 
-_TICK_LEVELS = [0.25, 0.5, 0.75, 1.0]
+def _fmt2dp(fmt, val):
+    """Format val with fmt but cap decimal places at 2."""
+    s = fmt.format(val)
+    # If the format produced more than 2dp, reformat at 2dp preserving sign prefix
+    if '.' in s:
+        integer_part, dec_part = s.split('.')
+        if len(dec_part) > 2:
+            prefix = '+' if '+' in fmt else ''
+            s = f'{val:{prefix}.2f}'
+    return s
 
-# Alternating band colours from centre outward
-_BAND_COLORS = ['#ececec', '#ffffff', '#ececec', '#ffffff']
+_BAND_EDGES  = [i / 10 for i in range(11)]                           # 0.0, 0.1, …, 1.0
+_BAND_COLORS = ['#ececec' if i % 2 == 0 else '#ffffff' for i in range(10)]  # alternating
 _SPOKE_COLOR = '#cccccc'
-_LABEL_C     = '#333333'   # axis spoke labels
-_TICK_C      = '#888888'   # ring tick value labels — readable on either band
+_LABEL_C     = '#333333'
 
 
 def make_radar(
@@ -81,12 +89,14 @@ def make_radar(
     color_a, color_b : hex colour strings for season_a and season_b.
     figsize : tuple
     """
-    # ── Compute axis ranges from league distribution ───────────────────────────
+    # ── Compute axis ranges from league distribution (with buffer) ────────────
+    # Buffer keeps worst/best teams off the very centre/edge of the radar
     axis_ranges = {}
     for _, col, _, _ in metrics:
-        lo = league_df[col].min()
-        hi = league_df[col].max()
-        axis_ranges[col] = (lo, hi)
+        lo   = league_df[col].min()
+        hi   = league_df[col].max()
+        pad  = (hi - lo) * 0.15
+        axis_ranges[col] = (lo - pad, hi + pad)
 
     labels = [m[0] for m in metrics]
     N      = len(labels)
@@ -116,46 +126,64 @@ def make_radar(
 
     # ── Alternating concentric bands (drawn before data) ──────────────────────
     theta_ring = np.linspace(0, 2 * np.pi, 360)
-    ring_edges = [0] + _TICK_LEVELS
-    for i, (r_lo, r_hi) in enumerate(zip(ring_edges[:-1], ring_edges[1:])):
+    for i, (r_lo, r_hi) in enumerate(zip(_BAND_EDGES[:-1], _BAND_EDGES[1:])):
         ax.fill_between(theta_ring, r_lo, r_hi,
                         color=_BAND_COLORS[i], zorder=0)
-
-    # Spoke lines (drawn over bands, under data)
-    for angle in angles[:-1]:
-        ax.plot([angle, angle], [0, 1], color=_SPOKE_COLOR, linewidth=0.8, zorder=1)
 
     # Outer boundary ring
     ax.plot(theta_ring, np.ones_like(theta_ring),
             color=_SPOKE_COLOR, linewidth=0.8, zorder=1)
 
-    # ── Data polygons ─────────────────────────────────────────────────────────
-    for v, col in [(va, color_a), (vb, color_b)]:
-        ax.plot(angles, v, color=col, linewidth=2, zorder=3)
-        ax.fill(angles, v, color=col, alpha=0.15, zorder=2)
-        ax.scatter(angles, v, color=col, s=40, zorder=4)
+    # ── Data polygons — opaque fills, no outline ──────────────────────────────
+    for i, (v, col) in enumerate([(va, color_a), (vb, color_b)]):
+        ax.fill(angles, v, color=col, alpha=0.55, zorder=2 + i)
 
     # ── Turn off default matplotlib grid/ticks (we drew our own) ──────────────
     ax.set_yticks([])
     ax.yaxis.grid(False)
     ax.xaxis.grid(False)
     ax.spines['polar'].set_visible(False)
-    ax.set_xticks(angles[:-1])
-    ax.set_xticklabels(labels, fontsize=10, color=_LABEL_C)
-    ax.tick_params(pad=12)
+    ax.set_xticks([])   # no default tick labels — drawn manually below
 
-    # ── Spoke tick labels — value at each ring boundary, no background ─────────
-    for i, (_, col, inv, fmt) in enumerate(metrics):
-        angle = angles[i]
-        lo, hi = axis_ranges[col]
-        for r in _TICK_LEVELS:
-            raw = lo + (1 - r) * (hi - lo) if inv else lo + r * (hi - lo)
-            ax.text(
-                angle, r, fmt.format(raw),
+    # Spoke labels: parallel to their spoke, flipped on southern hemisphere
+    R_LABEL = 1.18
+    for label_text, angle in zip(labels, angles[:-1]):
+        angle_deg = np.degrees(angle)
+        rot = (-angle_deg) % 360
+        if rot > 180:
+            rot -= 360
+        if rot > 90:
+            rot -= 180
+        elif rot < -90:
+            rot += 180
+        ax.text(angle, R_LABEL, label_text,
                 ha='center', va='center',
-                fontsize=6.5, color=_TICK_C,
-                zorder=5,
-            )
+                rotation=rot, rotation_mode='anchor',
+                fontsize=10, color=_LABEL_C,
+                clip_on=False, zorder=10)
+
+    # ── Per-ring tick labels — rotated along their spoke, same flip rule ─────
+    tick_rs = [i / 10 for i in range(1, 11)]  # 0.1 … 1.0
+
+    for i, (_, col, inv, fmt) in enumerate(metrics):
+        angle     = angles[i]
+        angle_deg = np.degrees(angle)
+        rot = (-angle_deg) % 360
+        if rot > 180:
+            rot -= 360
+        if rot > 90:
+            rot -= 180
+        elif rot < -90:
+            rot += 180
+
+        lo, hi = axis_ranges[col]
+        for r in tick_rs:
+            raw   = lo + (1 - r) * (hi - lo) if inv else lo + r * (hi - lo)
+            label = _fmt2dp(fmt, raw)
+            ax.text(angle, r, label,
+                    ha='center', va='center',
+                    rotation=rot, rotation_mode='anchor',
+                    fontsize=8, color='#666666', zorder=5)
 
     # ── Legend ────────────────────────────────────────────────────────────────
     handles = [
