@@ -401,5 +401,5 @@ def main(season, league, folder_path=None):
 if __name__ == "__main__":
     # Default values when running the script directly
     season = "2025-2026"
-    league = "Premier_League"
+    league = "Superligaen"
     main(season, league)

@@ -1,7 +1,8 @@
 """
 Orchestrates the full data collection pipeline:
   1. FotMob season downloader  — fetches raw match JSON files (skips already-downloaded)
-  2. FotMob ETL                — parses JSON → SQLite (np_shots, np_matches, red_cards, etc.)
+  2. FotMob ETL (standard)     — parses JSON → SQLite (matches, shots, etc.)
+  2b. FotMob ETL (non-penalty) — parses JSON → SQLite (np_shots, np_matches, red_cards, etc.)
   3. WhoScored EPV             — Selenium scrape → EPV + shot possession IDs in SQLite
 
 Usage:
@@ -25,7 +26,8 @@ sys.path.insert(0, str(_collectors))
 sys.path.insert(0, str(_collectors / "whoscored"))
 
 from fotmob.fotmob_season_downloader import store_season, LEAGUES
-from fotmob.fotmob_etl_database_non_penalty import main as fotmob_etl_main
+from fotmob.fotmob_etl_database import main as fotmob_etl_main
+from fotmob.fotmob_etl_database_non_penalty import main as fotmob_etl_np_main
 from whoscored.whoscored_scraper import process_epv_data
 
 
@@ -128,8 +130,10 @@ def main():
 
     # ── Step 2: FotMob ETL ────────────────────────────────────────────────────
     if not args.skip_fotmob_etl:
-        print("\n── Step 2: FotMob ETL → SQLite ───────────────────────────────")
+        print("\n── Step 2a: FotMob ETL (standard) → SQLite ───────────────────")
         fotmob_etl_main(season=season_label, league=args.league)
+        print("\n── Step 2b: FotMob ETL (non-penalty) → SQLite ────────────────")
+        fotmob_etl_np_main(season=season_label, league=args.league)
     else:
         print("\n── Step 2: FotMob ETL [SKIPPED] ──────────────────────────────")
 
@@ -151,4 +155,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+ 
  
