@@ -13,21 +13,21 @@ import pandas as pd
 # invert=True → lower raw value is better on the chart
 
 ATTACK_METRICS = [
-    ('npxG p/g',         'npxG_for',            False, '{:.2f}'),
-    ('npxG / shot',      'npxG_per_shot_for',    False, '{:.2f}'),
-    ('Shots p/g',        'shots_for',             False, '{:.1f}'),
-    ('Set piece xG',     'sp_xg_for',             False, '{:.2f}'),
-    ('Box touches p/g',  'box_touches_for',       False, '{:.1f}'),
+    ('npxG',         'npxG_for',            False, '{:.2f}'),
+    ('npxG/Shot',      'npxG_per_shot_for',    False, '{:.2f}'),
+    ('Shots',        'shots_for',             False, '{:.1f}'),
+    ('Set Piece xG',     'sp_xg_for',             False, '{:.2f}'),
+    ('Touches in Opp. Box',  'box_touches_for',       False, '{:.1f}'),
     ('Possession %',     'possession',            False, '{:.1f}'),
 ]
 
 DEFENCE_METRICS = [
-    ('npxGA p/g',        'npxGA',                True,  '{:.2f}'),
-    ('npxGA / shot',     'npxG_per_shot_ag',     True,  '{:.2f}'),
-    ('Shots conceded',   'shots_against',         True,  '{:.1f}'),
-    ('Set piece xGA',    'sp_xg_against',         True,  '{:.2f}'),
-    ('Opp box touches',  'box_touches_against',   True,  '{:.1f}'),
-    ('Opp pass %',       'opp_pass_pct',          True,  '{:.1f}'),
+    ('npxG Conceded',        'npxGA',                True,  '{:.2f}'),
+    ('npxG/Shot Conceded',     'npxG_per_shot_ag',     True,  '{:.2f}'),
+    ('Shots Conceded',   'shots_against',         True,  '{:.1f}'),
+    ('Set Piece xG Conceded',    'sp_xg_against',         True,  '{:.2f}'),
+    ('Touches in Opp. Box\nConceded',  'box_touches_against',   True,  '{:.1f}'),
+    ('Opp Pass %',       'opp_pass_pct',          True,  '{:.1f}'),
 ]
 
 

@@ -30,6 +30,7 @@ plt.rcParams['font.family'] = 'Roboto'
 
 
 from viz.logos import TEAM_LOGOS
+from viz.team_colors import TEAM_COLORS
 
 
 def _fetch_logo(team_name):
@@ -55,9 +56,22 @@ def plot_xg_trend(
     league,
     save_path=None,
     figsize=(12, 5.5),
-    xgf_col="#16a34a",
-    xga_col="#e63946",
+    xgf_col=None,
+    xga_col=None,
+    annotations=None,
+    roll_n=10,
 ):
+    """
+    annotations : list of (date_str, label) tuples, e.g. [('2025-10-01', "Huesca's injury")]
+                  Each draws a vertical line at the nearest match to that date.
+    roll_n       : rolling window size shown in the y-axis label (default 10).
+    """
+    # Use team's primary colour for xG for, secondary for xG against if registered
+    if xgf_col is None or xga_col is None:
+        tc = TEAM_COLORS.get(team)
+        xgf_col = xgf_col or (tc[0] if tc else '#16a34a')
+        xga_col = xga_col or (tc[1] if tc else '#e63946')
+
     df = plot_df.sort_values("match_date").reset_index(drop=True)
 
     dates = df["match_date"]
@@ -107,13 +121,26 @@ def plot_xg_trend(
         ax.text(idx + offset, y_max * 0.98, df.loc[idx, "season"],
                 fontsize=8, color="#888888", va="top", ha=ha)
 
+    # ── Custom annotations ────────────────────────────────────────────────────
+    if annotations:
+        import pandas as pd
+        dates_series = pd.to_datetime(df["match_date"])
+        y_max = max(np.max(xgf), np.max(xga))
+        for date_str, label in annotations:
+            target = pd.Timestamp(date_str)
+            idx = (dates_series - target).abs().idxmin()
+            ax.axvline(idx, color="#555555", linewidth=1.2, linestyle="--", zorder=2, alpha=0.7)
+            ax.text(idx + 0.25, y_max * 0.97, label,
+                    fontsize=8.5, color="#555555", va="top", ha="left",
+                    style="italic")
+
     # ── Axes ──────────────────────────────────────────────────────────────────
     ax.set_xticks([0, len(df) - 1])
     ax.set_xticklabels(
         [dates.iloc[0].strftime("%b %Y"), dates.iloc[-1].strftime("%b %Y")],
         fontsize=10, color="#444444",
     )
-    ax.set_ylabel("npxG (10-game rolling avg)", fontsize=9, color="#666666", labelpad=8)
+    ax.set_ylabel(f"npxG ({roll_n}-game rolling avg)", fontsize=9, color="#666666", labelpad=8)
     ax.tick_params(axis="y", labelsize=9, labelcolor="#666666")
     ax.yaxis.set_major_formatter(ticker.FormatStrFormatter("%.1f"))
 
@@ -123,7 +150,8 @@ def plot_xg_trend(
         plt.Line2D([0], [0], color=xga_col, linewidth=2, label="npxG Against"),
     ]
     ax.legend(handles=handles, frameon=False, fontsize=10, loc="upper right", ncol=2,
-              bbox_to_anchor=(1, 1.01))
+              bbox_to_anchor=(1, 1.025
+              ))
 
     # ── Team logo (top right of figure) ──────────────────────────────────────
     logo = _fetch_logo(team)

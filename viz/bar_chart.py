@@ -31,6 +31,7 @@ from io import BytesIO
 from PIL import Image
 
 from viz.logos import TEAM_LOGOS
+from viz.team_colors import get_colors, TEAM_COLORS
 
 # Register Roboto
 fm.fontManager.addfont('/Users/admin/Library/Fonts/Roboto-Regular.ttf')
@@ -67,6 +68,10 @@ def plot_bar_chart(
     teams  = list(data.keys())
     values = list(data.values())
     n      = len(teams)
+
+    # Auto-resolve highlight colour from team registry if not overridden
+    if highlight_team and highlight_col == '#e63946' and highlight_team in TEAM_COLORS:
+        highlight_col = TEAM_COLORS[highlight_team][0]
 
     figsize = figsize or (10, max(4, n * 0.6))
     fig, ax = plt.subplots(figsize=figsize)

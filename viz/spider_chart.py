@@ -30,6 +30,8 @@ import numpy as np
 from infra.data.feature_engineering.team_stats import (
     get_standard_stats, ATTACK_METRICS, DEFENCE_METRICS,
 )
+from viz.team_colors import get_colors
+from viz.utils import multicolor_text
 
 fm.fontManager.addfont('/Users/admin/Library/Fonts/Roboto-Regular.ttf')
 fm.fontManager.addfont('/Users/admin/Library/Fonts/Roboto-Bold.ttf')
@@ -149,16 +151,7 @@ def _draw_spider(ax, metrics, vals_a, vals_b, league_df,
                 rotation=rot, rotation_mode='anchor',
                 fontsize=10, color=_LABEL_C, zorder=10)
 
-    # Legend
-    handles = [
-        plt.Line2D([0], [0], color=color_a, linewidth=2,
-                   marker='o', markersize=5, label=label_a),
-        plt.Line2D([0], [0], color=color_b, linewidth=2,
-                   marker='o', markersize=5, label=label_b),
-    ]
-    ax.legend(handles=handles, loc='upper center',
-              bbox_to_anchor=(0.5, -0.02),
-              frameon=False, fontsize=10, ncol=2)
+    # No legend — team/season identification handled by coloured title in make_spider
 
 
 def make_spider(
@@ -172,8 +165,8 @@ def make_spider(
     title=None,
     subtitle=None,
     save_path=None,
-    color_a='#457b9d',
-    color_b='#e63946',
+    color_a=None,
+    color_b=None,
     figsize=(7, 8),
 ):
     """
@@ -193,6 +186,13 @@ def make_spider(
     """
     metrics   = ATTACK_METRICS if chart == 'attack' else DEFENCE_METRICS
     team_b    = team_b or team_a
+
+    # Auto-resolve colours from team registry if not explicitly provided
+    if color_a is None or color_b is None:
+        _ca, _cb = get_colors(team_a, team_b)
+        color_a = color_a or _ca
+        color_b = color_b or _cb
+
     seasons   = list({season_a, season_b})
 
     stats     = get_standard_stats(db_path, league, seasons=seasons)
@@ -230,11 +230,29 @@ def make_spider(
     _draw_spider(ax, metrics, vals_a, vals_b, league_df,
                  label_a, label_b, color_a, color_b)
 
-    fig.text(0.5, 0.97, title,    ha='center', va='top',
-             fontsize=13, fontweight='bold', color='#222222')
-    fig.text(0.5, 0.93, subtitle, ha='center', va='top',
-             fontsize=9, color='#888888')
-    fig.subplots_adjust(top=0.88, bottom=0.08)
+    # ── Title: coloured by team/season ────────────────────────────────────────
+    if team_b == team_a:
+        # Same team: plain title, coloured seasons underneath
+        fig.text(0.5, 0.98, title, ha='center', va='top',
+                 fontsize=13, fontweight='bold', color='#222222')
+        multicolor_text(fig, ax, [
+            (_short_season(season_a), color_a),
+            ('  vs  ',               '#888888'),
+            (_short_season(season_b), color_b),
+        ], y=0.945, fontsize=10, fontweight='bold', ref='center')
+        fig.text(0.5, 0.925, subtitle, ha='center', va='top',
+                 fontsize=9, color='#888888')
+    else:
+        # Two different teams: team names in their colours
+        multicolor_text(fig, ax, [
+            (team_a,   color_a),
+            ('  vs  ', '#222222'),
+            (team_b,   color_b),
+        ], y=0.98, fontsize=13, fontweight='bold', ref='center')
+        fig.text(0.5, 0.945, subtitle, ha='center', va='top',
+                 fontsize=9, color='#888888')
+
+    fig.subplots_adjust(top=0.90, bottom=0.08)
 
     if save_path:
         plt.savefig(save_path, dpi=180, bbox_inches='tight', facecolor='white')
