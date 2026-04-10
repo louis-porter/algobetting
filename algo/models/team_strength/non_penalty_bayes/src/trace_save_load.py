@@ -7,9 +7,12 @@ import os
 from pathlib import Path
 
 
-def save_season_trace(trace, season_year, league, team_names=None, model_version="v1"):
+def save_season_trace(trace, season_year, league, team_names=None, model_version="v1", base_dir=None):
     """Save trace with team name mapping for future use"""
-    save_dir = Path(f"model_traces/{model_version}")
+    if base_dir is not None:
+        save_dir = Path(base_dir) / model_version
+    else:
+        save_dir = Path(f"model_traces/{model_version}")
     save_dir.mkdir(parents=True, exist_ok=True)
     
     # Save the trace
@@ -73,9 +76,12 @@ def save_season_trace(trace, season_year, league, team_names=None, model_version
     return trace_path
 
 
-def load_previous_season_trace(current_season, league, model_version="v1"):
+def load_previous_season_trace(current_season, league, model_version="v1", base_dir=None):
     """Load both trace and team mapping from previous season"""
-    save_dir = Path(f"model_traces/{model_version}")
+    if base_dir is not None:
+        save_dir = Path(base_dir) / model_version
+    else:
+        save_dir = Path(f"model_traces/{model_version}")
     previous_year = current_season - 1
     
     trace_path = save_dir / f"trace_{league}_{previous_year}.nc"
