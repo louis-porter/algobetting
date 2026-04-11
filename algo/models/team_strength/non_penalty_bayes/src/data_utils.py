@@ -446,6 +446,7 @@ def create_weighted_scoreline_data(match_df: pd.DataFrame,
 
             match_scorelines.append({
                 'match_id':   match_id,
+                'match_date': row['match_date'],
                 'home_team':  row['home_team'],
                 'away_team':  row['away_team'],
                 'home_goals': home_goals,

@@ -23,26 +23,28 @@ import matplotlib.pyplot as plt
 
 from src.data_utils import load_and_process_data
 from src.model import build_and_sample_model
+from manual_priors import MANUAL_ATT_PRIORS, MANUAL_DEF_PRIORS
 
 # ── Config ───────────────────────────────────────────────────────────────────
-REPO_ROOT = os.path.abspath(os.path.join(NP_BAYES_DIR, '..', '..', '..'))
+REPO_ROOT = os.path.abspath(os.path.join(NP_BAYES_DIR, '..', '..', '..', '..'))
 DB_PATH   = os.path.join(REPO_ROOT, 'infra', 'data', 'db', 'fotmob.db')
 
 LEAGUE = 'Premier_League'
-SEASON = '2024-2025'
+SEASON = '2025-2026'
 
-EVAL_START = '2024-09-01'   # first prediction date
-EVAL_END   = '2025-05-01'   # last prediction date
+EVAL_START = '2025-09-01'   # first prediction date
+EVAL_END   = '2026-04-01'   # last prediction date
 
 # Small traces per week — speed vs accuracy trade-off
-N_SAMPLES = 1_000
+N_SAMPLES = 10_000
 N_TUNE    = 500
 
 # Full-season data load (no window — backtesting needs all history)
-DECAY_RATE   = 0.001
-GOALS_WEIGHT = 0.20
+DECAY_RATE   = 0.0018
+GOALS_WEIGHT = 0.25
 XG_WEIGHT    = 0.50
-PSXG_WEIGHT  = 0.30
+PSXG_WEIGHT  = 0.15
+EPV_WEIGHT   = 0.10
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -76,7 +78,13 @@ def predict_week(df, prediction_date):
     test_df['home_idx']  = test_df['home_team'].map(team_map)
     test_df['away_idx']  = test_df['away_team'].map(team_map)
 
-    _, trace = build_and_sample_model(train_df, n_teams, trace=N_SAMPLES, tune=N_TUNE)
+    _, trace = build_and_sample_model(
+        train_df, n_teams,
+        trace=N_SAMPLES, tune=N_TUNE,
+        manual_att_priors=MANUAL_ATT_PRIORS,
+        manual_def_priors=MANUAL_DEF_PRIORS,
+        team_mapping=team_map,
+    )
 
     posterior = trace.posterior
     att  = posterior['att_str'].values.reshape(-1, n_teams)
@@ -100,14 +108,15 @@ def predict_week(df, prediction_date):
     ah = test_df['home_goals'].values
     aa = test_df['away_goals'].values
 
-    mae = np.mean(np.abs(
+    errors = np.abs(
         np.concatenate([home_mu, away_mu]) -
         np.concatenate([ah, aa])
-    ))
+    )
 
     return {
         'date':            prediction_date,
-        'mae':             mae,
+        'errors':          errors,          # raw per-prediction errors for pooled MAE
+        'mae':             float(errors.mean()),
         'matches':         len(test_df),
         'home_actual':     float(np.mean(ah)),
         'away_actual':     float(np.mean(aa)),
@@ -146,9 +155,14 @@ def main():
 
     results = pd.DataFrame(records)
 
+    all_errors  = np.concatenate(results['errors'].values)
+    pooled_mae  = float(all_errors.mean())
+    total_preds = len(all_errors)
+
     print(f"\n=== SUMMARY ===")
     print(f"Weeks evaluated : {len(results)}")
-    print(f"Mean MAE        : {results['mae'].mean():.3f}")
+    print(f"Predictions     : {total_preds}")
+    print(f"MAE (pooled)    : {pooled_mae:.3f}")
     print(f"Home goals      : actual {results['home_actual'].mean():.2f}  "
           f"pred {results['home_predicted'].mean():.2f}")
     print(f"Away goals      : actual {results['away_actual'].mean():.2f}  "
@@ -156,37 +170,37 @@ def main():
     print(f"Total/game      : actual {results['total_actual'].mean():.2f}  "
           f"pred {results['total_predicted'].mean():.2f}")
 
-    out = os.path.join(os.path.dirname(__file__), 'weekly_accuracy_results.csv')
-    results.to_csv(out, index=False)
+    out = os.path.join(os.path.dirname(__file__), 'outputs', 'weekly_accuracy_results.csv')
+    results.drop(columns=['errors']).to_csv(out, index=False)
     print(f"\nSaved: {out}")
 
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
-    mean_mae = results['mae'].mean()
+    # fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
+    # mean_mae = results['mae'].mean()
 
-    ax1.plot(results['date'], results['mae'], 'bo-', linewidth=2)
-    ax1.axhline(mean_mae, color='r', linestyle='--', alpha=0.7, label=f'Mean: {mean_mae:.3f}')
-    ax1.set_title('Weekly MAE — goals')
-    ax1.set_ylabel('MAE')
-    ax1.legend()
-    ax1.grid(True, alpha=0.3)
+    # ax1.plot(results['date'], results['mae'], 'bo-', linewidth=2)
+    # ax1.axhline(mean_mae, color='r', linestyle='--', alpha=0.7, label=f'Mean: {mean_mae:.3f}')
+    # ax1.set_title('Weekly MAE — goals')
+    # ax1.set_ylabel('MAE')
+    # ax1.legend()
+    # ax1.grid(True, alpha=0.3)
 
-    for col, lbl, sty in [
-        ('home_actual',    'Home actual',     'bo-'),
-        ('home_predicted', 'Home predicted',  'b--'),
-        ('away_actual',    'Away actual',     'ro-'),
-        ('away_predicted', 'Away predicted',  'r--'),
-        ('total_actual',   'Total actual',    'ko-'),
-        ('total_predicted','Total predicted', 'k--'),
-    ]:
-        ax2.plot(results['date'], results[col], sty, label=lbl)
+    # for col, lbl, sty in [
+    #     ('home_actual',    'Home actual',     'bo-'),
+    #     ('home_predicted', 'Home predicted',  'b--'),
+    #     ('away_actual',    'Away actual',     'ro-'),
+    #     ('away_predicted', 'Away predicted',  'r--'),
+    #     ('total_actual',   'Total actual',    'ko-'),
+    #     ('total_predicted','Total predicted', 'k--'),
+    # ]:
+    #     ax2.plot(results['date'], results[col], sty, label=lbl)
 
-    ax2.set_title('Goals per game: actual vs predicted')
-    ax2.set_ylabel('Goals per game')
-    ax2.legend()
-    ax2.grid(True, alpha=0.3)
+    # ax2.set_title('Goals per game: actual vs predicted')
+    # ax2.set_ylabel('Goals per game')
+    # ax2.legend()
+    # ax2.grid(True, alpha=0.3)
 
-    plt.tight_layout()
-    plt.show()
+    # plt.tight_layout()
+    # plt.show()
 
 
 if __name__ == '__main__':

@@ -45,19 +45,31 @@ ZONES = [
 ]
 _POS_COLOR = {p: c for _, positions, c in ZONES for p in positions}
 
-_SAVE_DPI        = 160
+_SAVE_DPI        = 300
 _BADGE_PX        = 56
+
+
+def _trim_transparent(img):
+    """Crop away transparent/white border so the crest fills the frame."""
+    bbox = img.getbbox()   # bounding box of non-zero alpha pixels
+    if bbox:
+        img = img.crop(bbox)
+    return img
+
+
+_HEADERS = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36'}
 
 
 def _fetch_badge(url):
     try:
-        r   = requests.get(url, timeout=4)
+        r   = requests.get(url, timeout=4, headers=_HEADERS)
         img = Image.open(BytesIO(r.content)).convert('RGBA')
+        img = _trim_transparent(img)
         scale = _BADGE_PX / max(img.width, img.height)
         nw, nh = max(1, round(img.width * scale)), max(1, round(img.height * scale))
         img    = img.resize((nw, nh), Image.LANCZOS)
-        sq     = Image.new('RGBA', (_BADGE_PX, _BADGE_PX), (0, 0, 0, 0))
-        sq.paste(img, ((_BADGE_PX - nw) // 2, (_BADGE_PX - nh) // 2))
+        sq = Image.new('RGBA', (_BADGE_PX, _BADGE_PX), (0, 0, 0, 0))
+        sq.paste(img, ((_BADGE_PX - nw) // 2, (_BADGE_PX - nh) // 2), mask=img)
         return sq
     except Exception:
         return None
@@ -279,15 +291,6 @@ def render_combined_table(avg_table, position_freq, ratings_df,
     vline_bot = PAD_BOT - 0.10
     for vx in [SEC1_L, SEC1_R, SEC2_L, SEC2_R, X_BAR_L, X_BAR_R]:
         ax.plot([vx, vx], [vline_bot, vline_top], color='#d0d0d0', lw=0.8, zorder=5)
-
-    # ── Legend ────────────────────────────────────────────────────────────────
-    leg_x = X_BAR_L
-    leg_y = PAD_BOT * 0.55
-    for name, _, color in ZONES:
-        ax.add_patch(mpatches.Rectangle((leg_x, leg_y-0.10), 0.28, 0.20,
-                                        facecolor=color, edgecolor='none'))
-        ax.text(leg_x + 0.36, leg_y, name, fontsize=8.5, va='center', color='#555')
-        leg_x += 1.75
 
     plt.tight_layout(pad=0)
     return fig

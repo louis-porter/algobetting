@@ -43,7 +43,7 @@ def _fetch_logo(team_name):
                 params={"t": team_name}, timeout=5
             )
             url = r.json()["teams"][0]["strBadge"]
-        img_data = requests.get(url, timeout=5).content
+        img_data = requests.get(url, timeout=5, headers={'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36'}).content
         return Image.open(BytesIO(img_data)).convert("RGBA")
     except Exception:
         return None

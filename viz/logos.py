@@ -39,7 +39,7 @@ TEAM_LOGOS = {
     "Crystal Palace":   "https://resources.premierleague.com/premierleague/badges/t31@x2.png",
     "Everton":          "https://resources.premierleague.com/premierleague/badges/t11@x2.png",
     "Fulham":           "https://resources.premierleague.com/premierleague/badges/t54@x2.png",
-    "Liverpool":        "https://resources.premierleague.com/premierleague/badges/t14@x2.png",
+    "Liverpool":        "https://www.edigitalagency.com.au/wp-content/uploads/new-Liverpool-FC-logo-png-large-size.png",
     "Man City":         "https://resources.premierleague.com/premierleague/badges/t43@x2.png",
     "Man United":       "https://resources.premierleague.com/premierleague/badges/t1@x2.png",
     "Newcastle":        "https://resources.premierleague.com/premierleague/badges/t4@x2.png",
@@ -49,4 +49,5 @@ TEAM_LOGOS = {
     "West Ham":         "https://resources.premierleague.com/premierleague/badges/t21@x2.png",
     "Wolves":           "https://resources.premierleague.com/premierleague/badges/t39@x2.png",
     "Leeds":            "https://resources.premierleague.com/premierleague/badges/t2@x2.png",
+    "Burnley":          "https://resources.premierleague.com/premierleague/badges/t90@x2.png",
 }
