@@ -112,17 +112,17 @@ def render_scatter(ratings, season='', league='Premier League',
                         color='#666666')
 
     ax.invert_yaxis()
-    ax.set_xlabel('Attack strength  (→ better)', fontsize=9, color='#666666', labelpad=8)
-    ax.set_ylabel('Defence strength  (↑ better)', fontsize=9, color='#666666', labelpad=8)
+    ax.set_xlabel('Relative Attack strength', fontsize=9, color='#666666', labelpad=8)
+    ax.set_ylabel('Relative Defence strength', fontsize=9, color='#666666', labelpad=8)
     ax.tick_params(axis='both', labelsize=9, labelcolor='#666666')
     ax.xaxis.set_major_formatter(ticker.FormatStrFormatter('%.2f'))
     ax.yaxis.set_major_formatter(ticker.FormatStrFormatter('%.2f'))
 
-    subtitle = f'{season}  ·  full-season posterior means' if season else 'full-season posterior means'
-    ax.text(0, 1.06, f'{league} — Attack vs Defence',
+    subtitle = f'{season}' if season else ''
+    ax.text(0, 1.06, f'{league} — Attack/Defence Ratings',
             transform=ax.transAxes,
             fontsize=13, fontweight='bold', color='#222222', va='bottom', ha='left')
-    ax.text(0, 1.01, subtitle,
+    ax.text(0, 1.04, subtitle,
             transform=ax.transAxes,
             fontsize=9, color='#888888', va='bottom', ha='left')
 

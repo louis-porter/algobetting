@@ -46,7 +46,7 @@ ZONES = [
 _POS_COLOR = {p: c for _, positions, c in ZONES for p in positions}
 
 _SAVE_DPI        = 300
-_BADGE_PX        = 56
+_BADGE_PX        = 64
 
 
 def _trim_transparent(img):
@@ -133,22 +133,27 @@ def render_combined_table(avg_table, position_freq, ratings_df,
     ratings_lookup = ratings_df.set_index('team') if ratings_df is not None else None
 
     # ── Layout ───────────────────────────────────────────────────────────────
-    ROW_H   = 0.50
-    PAD_TOP = 1.30
-    PAD_BOT = 0.35
-    FIG_W   = 19.5
+    ROW_H   = 0.46
+    PAD_TOP = 1.20
+    PAD_BOT = 0.30
+    FIG_W   = 14.2
     FIG_H   = n_teams * ROW_H + PAD_TOP + PAD_BOT
 
-    X_RANK  = 0.28
-    X_BADGE = 0.68
-    X_NAME  = 1.38
+    X_RANK  = 0.22
+    X_BADGE = 0.54
+    X_NAME  = 1.12
 
-    SEC1_L  = 3.70;  X_XGD = 4.15;  X_XGF = 5.10;  X_XGA = 6.05;  SEC1_R = 6.65
-    SEC2_L  = 6.80
-    X_PTS   = 7.22;  X_PGFD = 8.10; X_PGAD = 8.95; X_PGDD = 9.80
-    X_TITLE = 10.72; X_TOP5 = 11.62; X_TOP8 = 12.52; X_REL = 13.42
-    SEC2_R  = 14.05
-    X_BAR_L = 14.20; X_BAR_R = FIG_W - 0.28; BAR_W = X_BAR_R - X_BAR_L
+    # Team rating — xGD, xGF, xGA
+    SEC1_L  = 3.10;  X_XGD = 3.62;  X_XGF = 4.42;  X_XGA = 5.22;  SEC1_R = 5.72
+
+    # Season projections — PTS, GD, four pct columns
+    SEC2_L  = 5.86
+    X_PTS   = 6.30;  X_PGDD = 7.08
+    X_TITLE = 7.88;  X_TOP5 = 8.66;  X_TOP8 = 9.44;  X_REL = 10.22
+    SEC2_R  = 10.74
+
+    # Position bars
+    X_BAR_L = 10.88;  X_BAR_R = FIG_W - 0.20;  BAR_W = X_BAR_R - X_BAR_L
 
     fig = plt.figure(figsize=(FIG_W, FIG_H))
     fig.patch.set_facecolor('white')
@@ -156,9 +161,9 @@ def render_combined_table(avg_table, position_freq, ratings_df,
     ax.set_xlim(0, FIG_W); ax.set_ylim(0, FIG_H); ax.axis('off')
 
     # ── Title ─────────────────────────────────────────────────────────────────
-    ax.text(X_RANK, FIG_H - 0.28, 'Premier League Season Projections',
+    ax.text(X_RANK, FIG_H - 0.22, 'Premier League Projections',
             fontsize=19, fontweight='bold', color='#111', va='top', ha='left')
-    ax.text(X_RANK, FIG_H - 0.62,
+    ax.text(X_RANK, FIG_H - 0.55,
             f'BEST model  ·  {n_sims:,} simulations  ·  {season}',
             fontsize=9, color='#999', va='top', ha='left')
     today_str = date.today().strftime('%-d %b %Y')
@@ -184,9 +189,9 @@ def render_combined_table(avg_table, position_freq, ratings_df,
     # ── Column headers ────────────────────────────────────────────────────────
     hdr_y = FIG_H - PAD_TOP + 0.18
     for x, lbl in [
-        (X_NAME,  'Team'),   (X_XGD,   'xGD'),  (X_XGF, 'xGF'), (X_XGA, 'xGA'),
-        (X_PTS,   'Pts'),    (X_PGFD,  'GF'),   (X_PGAD,'GA'),  (X_PGDD,'GD'),
-        (X_TITLE, 'Title %'),(X_TOP5,  'Top 5 %'),(X_TOP8,'Top 8 %'),(X_REL,'Rel %'),
+        (X_NAME,  'Team'),    (X_XGD, 'xGD'),  (X_XGF, 'xGF'),  (X_XGA, 'xGA'),
+        (X_PTS,   'Pts'),     (X_PGDD, 'GD'),
+        (X_TITLE, 'Title %'), (X_TOP5, 'Top 5 %'), (X_TOP8, 'Top 8 %'), (X_REL, 'Rel %'),
     ]:
         ax.text(x, hdr_y, lbl, fontsize=7.8, color='#555',
                 va='center', ha='center', style='italic')
@@ -217,7 +222,7 @@ def render_combined_table(avg_table, position_freq, ratings_df,
 
         url = team_logos.get(team)
         if url and badge_cache.get(url) is not None:
-            im = OffsetImage(badge_cache[url], zoom=72/_SAVE_DPI)
+            im = OffsetImage(badge_cache[url], zoom=96/_SAVE_DPI)
             ax.add_artist(AnnotationBbox(im, (X_BADGE, row_mid), frameon=False, zorder=2))
 
         ax.text(X_NAME, row_mid, team,
@@ -245,12 +250,9 @@ def render_combined_table(avg_table, position_freq, ratings_df,
             r = rd.iloc[0]
             ax.text(X_PTS, row_mid, f'{r["avg_points"]:.1f}',
                     fontsize=9.5, va='center', ha='center', color='#111', fontweight='bold')
-            for x, col in [(X_PGFD,'avg_goals_for'),(X_PGAD,'avg_goals_against'),
-                           (X_PGDD,'avg_goal_difference')]:
-                v = r.get(col, float('nan'))
-                if not np.isnan(v):
-                    lbl = f'{v:+.0f}' if 'diff' in col else f'{v:.0f}'
-                    ax.text(x, row_mid, lbl, fontsize=9, va='center', ha='center', color='#333')
+            v = r.get('avg_goal_difference', float('nan'))
+            if not np.isnan(v):
+                ax.text(X_PGDD, row_mid, f'{v:+.0f}', fontsize=9, va='center', ha='center', color='#333')
 
             for x, key, zone_col in [
                 (X_TITLE, 'title_pct',      '#F5C518'),

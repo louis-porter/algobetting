@@ -9,32 +9,56 @@ from itertools import product
 from typing import Dict, List, Tuple, Optional, Union
 from datetime import date
 
+# WhoScored → FotMob team name normalisation (only divergent names)
+WS_TO_FM_NAMES = {
+    'Manchester City':  'Man City',
+    'Manchester United': 'Man United',
+    'Nottingham Forest': 'Nottm Forest',
+}
+
+# Garbage time thresholds: (min_margin, from_minute)
+_GARBAGE_TIME_RULES = [(4, 45), (3, 57), (2, 87)]
+
+
+def _garbage_time_start(goals: pd.DataFrame,
+                        side_col: str = 'side',
+                        min_col: str = 'min') -> float:
+    """
+    Given a DataFrame of goals for a single match (sorted by minute),
+    returns the minute at which garbage time begins, or inf if never triggered.
+
+    side_col values must be 'home' / 'away'.
+    """
+    home = 0
+    away = 0
+    for _, g in goals.sort_values(min_col).iterrows():
+        if g[side_col] == 'home':
+            home += 1
+        else:
+            away += 1
+        margin = abs(home - away)
+        minute = int(g[min_col])
+        for min_margin, from_min in _GARBAGE_TIME_RULES:
+            if margin >= min_margin and minute >= from_min:
+                return float(minute)
+    return float('inf')
+
+
 def load_football_data(
     db_path: str,
     league: Union[str, List[str]],
     season: str,
     start: Optional[date] = None,
     end: Optional[date] = None,
-) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
-    Load match, shot, red card, and EPV data from SQLite database.
+    Load match, shot, red card, EPV, all-shots, and match-events data.
 
-    Parameters:
-    -----------
-    db_path : str
-        Path to the SQLite database
-    league : str or list
-        League identifier(s) (e.g., 'Premier_League')
-    season : str
-        Season identifier (e.g., '2023-2024')
-    start : date, optional
-        Earliest match date to include (inclusive)
-    end : date, optional
-        Latest match date to include (inclusive)
-
-    Returns:
-    --------
-    match_df, shot_df, red_df, epv_df : tuple of DataFrames
+    Returns
+    -------
+    match_df, shot_df, red_df, epv_df, all_shots_df, events_df
+        all_shots_df : FotMob shots (incl. penalties) — used for garbage time detection
+        events_df    : WhoScored match_events — used for competitive EPV computation
     """
     conn = sqlite3.connect(db_path)
 
@@ -45,7 +69,7 @@ def load_football_data(
 
     league_placeholders = ','.join(['?' for _ in leagues])
 
-    # Build optional date filter clauses and params
+    # FotMob date filter (match_date column)
     date_clause = ""
     date_params: list = []
     if start:
@@ -58,9 +82,19 @@ def load_football_data(
     base_params = leagues + [season]
     filtered_params = base_params + date_params
 
-    # Load match data
+    # WhoScored date filter (startDate column)
+    events_date_clause = ""
+    events_params = leagues + [season]
+    if start:
+        events_date_clause += " AND DATE(startDate) >= ?"
+        events_params.append(str(start))
+    if end:
+        events_date_clause += " AND DATE(startDate) <= ?"
+        events_params.append(str(end))
+
+    # ── Match data ────────────────────────────────────────────────────────────
     match_df = pd.read_sql_query(f"""
-        SELECT 
+        SELECT
             match_id,
             match_date,
             league_id,
@@ -78,15 +112,17 @@ def load_football_data(
             {date_clause}
     """, conn, params=filtered_params)
 
-    # Load shot data — includes possession_id joined from shot_possession_id table
+    # ── Non-penalty shots (xG model inputs) ──────────────────────────────────
     shot_df = pd.read_sql_query(f"""
-        SELECT 
+        SELECT
             match_id,
             match_date,
             league_id,
             fsd.season,
             team.team_name as team,
             side,
+            fsd.min,
+            fsd.eventType,
             expectedGoals,
             expectedGoalsOnTarget,
             possession_id
@@ -100,9 +136,9 @@ def load_football_data(
             {date_clause}
     """, conn, params=filtered_params)
 
-    # Load red card data
+    # ── Red cards ─────────────────────────────────────────────────────────────
     red_df = pd.read_sql_query(f"""
-        SELECT 
+        SELECT
             match_id,
             match_date,
             league_id,
@@ -119,7 +155,7 @@ def load_football_data(
             {date_clause}
     """, conn, params=filtered_params)
 
-    # Load EPV data
+    # ── EPV (aggregated, match-level) ─────────────────────────────────────────
     epv_df = pd.read_sql_query(f"""
         SELECT DISTINCT
             red.match_id,
@@ -130,21 +166,104 @@ def load_football_data(
             epv.division as league_id
         FROM np_shots red
         JOIN team_id_mapping team ON team.team_id = red.teamId
-        JOIN epv ON epv.team = team.team_name AND red.match_date = DATE(epv.startDate)                  
+        JOIN epv ON epv.team = team.team_name AND red.match_date = DATE(epv.startDate)
         WHERE
             division IN ({league_placeholders})
             AND epv.season = ?
             {date_clause}
     """, conn, params=filtered_params)
 
+    # ── All shots incl. penalties (FotMob) — for garbage time detection ───────
+    all_shots_df = pd.read_sql_query(f"""
+        SELECT
+            match_id,
+            match_date,
+            side,
+            min,
+            eventType
+        FROM shots
+        WHERE
+            league_id IN ({league_placeholders})
+            AND season = ?
+            {date_clause}
+    """, conn, params=filtered_params)
+
+    # ── Match events (WhoScored) — for competitive EPV ────────────────────────
+    events_df = pd.read_sql_query(f"""
+        SELECT
+            matchId,
+            DATE(startDate) as match_date,
+            homeTeam,
+            awayTeam,
+            h_a,
+            minute,
+            EPV,
+            isGoal,
+            goalOwn
+        FROM match_events
+        WHERE
+            division IN ({league_placeholders})
+            AND season = ?
+            AND (EPV IS NOT NULL OR isGoal = 1)
+            {events_date_clause}
+    """, conn, params=events_params)
+
     conn.close()
 
-    # Add days_ago calculation for all dataframes
+    # days_ago for time-decay (applied to match_df, shot_df, red_df, epv_df)
+    ref_date = pd.to_datetime(match_df["match_date"]).max() if not match_df.empty else pd.Timestamp.today()
     for df in [match_df, shot_df, red_df, epv_df]:
-        df["days_ago"] = (pd.to_datetime(df["match_date"]).max() - pd.to_datetime(df["match_date"])).dt.days
+        df["days_ago"] = (ref_date - pd.to_datetime(df["match_date"])).dt.days
         df["match_date"] = pd.to_datetime(df["match_date"])
 
-    return match_df, shot_df, red_df, epv_df
+    all_shots_df["match_date"] = pd.to_datetime(all_shots_df["match_date"])
+    events_df["match_date"] = pd.to_datetime(events_df["match_date"])
+
+    return match_df, shot_df, red_df, epv_df, all_shots_df, events_df
+
+
+def compute_competitive_epv(events_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Compute per-team EPV summed only over non-garbage-time events.
+
+    Uses WhoScored match_events with event-level EPV and goal flags.
+    Own goals are attributed to the correct team before scoreline reconstruction.
+    Team names are normalised to FotMob conventions via WS_TO_FM_NAMES.
+
+    Returns
+    -------
+    DataFrame with columns: match_date, team, competitive_epv
+    """
+    records = []
+
+    for match_id, grp in events_df.groupby('matchId'):
+        home_ws = grp['homeTeam'].iloc[0]
+        away_ws = grp['awayTeam'].iloc[0]
+        match_date = grp['match_date'].iloc[0]
+
+        home_fm = WS_TO_FM_NAMES.get(home_ws, home_ws)
+        away_fm = WS_TO_FM_NAMES.get(away_ws, away_ws)
+
+        # Goals: flip h_a for own goals so the scoring side is correct
+        goals = grp[grp['isGoal'] == 1].copy()
+        goals['side'] = goals.apply(
+            lambda r: ('away' if r['h_a'] == 'h' else 'home') if r.get('goalOwn', 0) == 1
+            else ('home' if r['h_a'] == 'h' else 'away'),
+            axis=1
+        )
+
+        gt_start = _garbage_time_start(goals, side_col='side', min_col='minute')
+
+        pre_gc = grp[grp['minute'] < gt_start]
+        home_epv = pre_gc[pre_gc['h_a'] == 'h']['EPV'].sum()
+        away_epv = pre_gc[pre_gc['h_a'] == 'a']['EPV'].sum()
+
+        records.append({'match_date': match_date, 'team': home_fm, 'competitive_epv': home_epv})
+        records.append({'match_date': match_date, 'team': away_fm, 'competitive_epv': away_epv})
+
+    return pd.DataFrame(records) if records else pd.DataFrame(
+        columns=['match_date', 'team', 'competitive_epv']
+    )
 
 
 def poisson_binomial_pmf(k: int, p_values: np.ndarray) -> float:
@@ -158,15 +277,12 @@ def poisson_binomial_pmf(k: int, p_values: np.ndarray) -> float:
     if k > n or k < 0:
         return 0.0
 
-    # Dynamic programming table
-    # dp[i][j] = probability of exactly j successes using first i trials
     dp = np.zeros((n + 1, k + 1))
-    dp[0][0] = 1.0  # Base case: 0 trials, 0 successes
+    dp[0][0] = 1.0
 
     for i in range(1, n + 1):
         p = p_values[i - 1]
-        dp[i][0] = dp[i - 1][0] * (1 - p)  # 0 successes
-
+        dp[i][0] = dp[i - 1][0] * (1 - p)
         for j in range(1, min(i, k) + 1):
             dp[i][j] = dp[i - 1][j] * (1 - p) + dp[i - 1][j - 1] * p
 
@@ -176,13 +292,6 @@ def poisson_binomial_pmf(k: int, p_values: np.ndarray) -> float:
 def simulate_shots_poisson_binomial(xg_values: np.ndarray, max_goals: Optional[int] = None) -> Dict[int, float]:
     """
     Simulate goal probabilities using Poisson-Binomial distribution.
-
-    Args:
-        xg_values: array of xG values for individual shots / possessions
-        max_goals: maximum number of goals to consider (default: number of trials)
-
-    Returns:
-        dict with goals as keys and probabilities as values
     """
     if len(xg_values) == 0:
         return {0: 1.0}
@@ -203,14 +312,6 @@ def simulate_game_poisson_binomial(home_xg_shots: np.ndarray, away_xg_shots: np.
                                    max_goals: int = 9) -> List[Dict]:
     """
     Simulate a game using Poisson-Binomial distribution for each team.
-
-    Args:
-        home_xg_shots: array of xG values for home team (one per possession)
-        away_xg_shots: array of xG values for away team (one per possession)
-        max_goals: maximum goals to consider for each team
-
-    Returns:
-        list of dicts with home_goals, away_goals, and probability
     """
     home_probs = simulate_shots_poisson_binomial(home_xg_shots, max_goals)
     away_probs = simulate_shots_poisson_binomial(away_xg_shots, max_goals)
@@ -233,36 +334,15 @@ def aggregate_possession_xg(shots: pd.DataFrame, side: str, col: str) -> Tuple[n
     Collapse correlated rebound shots into one xG value per possession using
     the complement rule: P(any shot scores) = 1 - prod(1 - xg_i).
 
-    Shots with no possession_id (NULL) are treated as independent and passed
-    through unchanged.
-
-    Parameters:
-    -----------
-    shots : DataFrame
-        Shot-level data for a single match, must contain columns:
-        'side', 'possession_id', and the xG column specified by `col`
-    side : str
-        'home' or 'away'
-    col : str
-        Column name to aggregate, e.g. 'expectedGoals' or 'expectedGoalsOnTarget'
-
-    Returns:
-    --------
-    possession_probs : np.ndarray
-        One probability value per possession (or independent shot).
-        This is the array to pass into simulate_shots_poisson_binomial.
-    xg_total : float
-        Sum of possession_probs — use as the lambda for a Poisson distribution.
+    Shots with no possession_id are treated as independent.
     """
     side_shots = shots[shots['side'] == side].copy()
     if side_shots.empty:
         return np.array([]), 0.0
 
-    # Shots without a possession_id are independent — pass through as-is
-    no_poss = side_shots[side_shots['possession_id'].isna()]
+    no_poss   = side_shots[side_shots['possession_id'].isna()]
     with_poss = side_shots[side_shots['possession_id'].notna()]
 
-    # Collapse each possession: P(score) = 1 - prod(1 - xg_i)
     possession_xg = (
         with_poss
         .groupby('possession_id')[col]
@@ -277,18 +357,7 @@ def aggregate_possession_xg(shots: pd.DataFrame, side: str, col: str) -> Tuple[n
 
 def calculate_red_card_penalty(red_cards_df: pd.DataFrame, match_id: str) -> float:
     """
-    Calculate red card penalty for a specific match based on earliest red card timing.
-
-    Parameters:
-    -----------
-    red_cards_df : DataFrame
-        Red card data
-    match_id : str
-        Match identifier
-
-    Returns:
-    --------
-    float : penalty multiplier (lower = more penalty)
+    Calculate red card penalty multiplier based on earliest red card timing.
     """
     match_red_cards = red_cards_df[red_cards_df['match_id'] == match_id]
 
@@ -297,71 +366,74 @@ def calculate_red_card_penalty(red_cards_df: pd.DataFrame, match_id: str) -> flo
 
     earliest_red_minute = match_red_cards['time'].min()
 
-    if earliest_red_minute > 80:
-        return 0.85
-    elif earliest_red_minute > 70:
-        return 0.75
-    elif earliest_red_minute > 60:
-        return 0.65
-    elif earliest_red_minute > 45:
-        return 0.5
-    elif earliest_red_minute > 30:
-        return 0.35
-    elif earliest_red_minute > 15:
-        return 0.2
-    else:
-        return 0.05
+    if earliest_red_minute > 80:   return 0.85
+    elif earliest_red_minute > 70: return 0.75
+    elif earliest_red_minute > 60: return 0.65
+    elif earliest_red_minute > 45: return 0.50
+    elif earliest_red_minute > 30: return 0.35
+    elif earliest_red_minute > 15: return 0.20
+    else:                          return 0.05
 
 
-def create_weighted_scoreline_data(match_df: pd.DataFrame,
-                                   shot_df: pd.DataFrame,
-                                   red_df: pd.DataFrame,
-                                   epv_df: pd.DataFrame,
-                                   max_goals: int = 9,
-                                   min_prob_threshold: float = 0.001,
-                                   decay_rate: float = 0.001,
-                                   goals_weight: float = 0.25,
-                                   xg_weight: float = 0.30,
-                                   psxg_weight: float = 0.25,
-                                   bernoulli_weight: float = 0.10,
-                                   epv_weight: float = 0.10) -> pd.DataFrame:
+def create_weighted_scoreline_data(
+    match_df: pd.DataFrame,
+    shot_df: pd.DataFrame,
+    red_df: pd.DataFrame,
+    epv_df: pd.DataFrame,
+    all_shots_df: pd.DataFrame,
+    max_goals: int = 9,
+    min_prob_threshold: float = 0.001,
+    decay_rate: float = 0.001,
+    # Base signal weights
+    goals_weight: float = 0.25,
+    xg_weight: float = 0.30,
+    psxg_weight: float = 0.25,
+    bernoulli_weight: float = 0.10,
+    epv_weight: float = 0.10,
+    # Garbage-time-cleaned signal weights (0 = disabled)
+    gc_goals_weight: float = 0.0,
+    gc_xg_weight: float = 0.0,
+    gc_psxg_weight: float = 0.0,
+    gc_bernoulli_weight: float = 0.0,
+    gc_epv_weight: float = 0.0,
+) -> pd.DataFrame:
     """
-    Build weighted scoreline distributions for each match by blending five
-    evidence sources:
+    Build weighted scoreline distributions for each match by blending up to ten
+    evidence sources — five base signals and five garbage-time-cleaned variants.
 
-        1. actual_goals  — Poisson centred on observed scoreline
-        2. xg_total      — Poisson centred on possession-aggregated xG sum
-        3. psxg_pb       — Poisson-Binomial over possession-aggregated PSxG array
-        4. bernoulli     — Poisson-Binomial over possession-aggregated xG array
-                           (same array as xg_total but modelled as discrete trials)
-        5. epv           — Poisson centred on match EPV totals
+    Base signals
+    ------------
+    1. actual_goals  — Poisson centred on full observed scoreline
+    2. xg_total      — Poisson centred on possession-aggregated xG sum
+    3. psxg_pb       — Poisson-Binomial over possession-aggregated PSxG
+    4. bernoulli     — Poisson-Binomial over possession-aggregated xG
+    5. epv           — Poisson centred on match EPV totals
 
-    Shots that share a possession_id are treated as dependent (rebounds) by
-    collapsing them to a single possession probability via the complement rule
-    before any distribution is computed. Shots with NULL possession_id are
-    treated as independent.
+    Garbage-time-cleaned variants (gc_* weights)
+    --------------------------------------------
+    Same as above, but shots / goals / EPV after garbage time starts are excluded.
+    Garbage time is determined per match from all FotMob shots (incl. penalties)
+    using _GARBAGE_TIME_RULES. EPV garbage time uses the pre-merged
+    'competitive_epv' column on epv_df (computed from WhoScored match_events).
 
-    Parameters:
-    -----------
-    goals_weight : float
-        Weight for the actual observed goals distribution
-    xg_weight : float
-        Weight for the Poisson xG total distribution
-    psxg_weight : float
-        Weight for the Poisson-Binomial PSxG distribution
-    bernoulli_weight : float
-        Weight for the Poisson-Binomial xG possession distribution
-    epv_weight : float
-        Weight for the EPV distribution
+    Set gc_* weights to 0 (default) to disable entirely.
 
-    Note: weights do not need to sum to 1 — they are used as relative scaling
-    factors within the blend and the result is normalised per match.
+    Parameters
+    ----------
+    all_shots_df : DataFrame
+        FotMob shots table (includes penalties) with columns:
+        match_id, side, min, eventType — used to detect garbage time start minute.
+    epv_df : DataFrame
+        Must contain 'EPV' (base) and optionally 'competitive_epv' (gc variant).
+        If 'competitive_epv' is absent, gc EPV falls back to full EPV.
     """
     expanded_data = []
 
-    for idx, row in match_df.iterrows():
-        match_id = row['match_id']
-        match_shots = shot_df[shot_df["match_id"] == match_id]
+    has_gc_epv = 'competitive_epv' in epv_df.columns
+
+    for _, row in match_df.iterrows():
+        match_id    = row['match_id']
+        match_shots = shot_df[shot_df['match_id'] == match_id]
 
         if match_shots.empty:
             continue
@@ -369,79 +441,124 @@ def create_weighted_scoreline_data(match_df: pd.DataFrame,
         actual_home = int(row['home_goals'])
         actual_away = int(row['away_goals'])
 
-        # ------------------------------------------------------------------
-        # Possession-aggregated xG arrays and totals
-        # ------------------------------------------------------------------
-        home_xg_probs, home_xg_total = aggregate_possession_xg(match_shots, 'home', 'expectedGoals')
-        away_xg_probs, away_xg_total = aggregate_possession_xg(match_shots, 'away', 'expectedGoals')
+        # ── Garbage time detection (FotMob all-shots) ─────────────────────────
+        match_all_shots = all_shots_df[all_shots_df['match_id'] == match_id]
+        all_goals = match_all_shots[match_all_shots['eventType'] == 'Goal']
+        gt_start = _garbage_time_start(all_goals, side_col='side', min_col='min')
 
-        home_psxg_probs, _ = aggregate_possession_xg(match_shots, 'home', 'expectedGoalsOnTarget')
-        away_psxg_probs, _ = aggregate_possession_xg(match_shots, 'away', 'expectedGoalsOnTarget')
+        # ── gc scoreline: subtract goals scored in garbage time ────────────────
+        if gt_start < float('inf'):
+            gc_home_goals_lost = int(((all_goals['side'] == 'home') & (all_goals['min'] >= gt_start)).sum())
+            gc_away_goals_lost = int(((all_goals['side'] == 'away') & (all_goals['min'] >= gt_start)).sum())
+        else:
+            gc_home_goals_lost = 0
+            gc_away_goals_lost = 0
+        gc_actual_home = max(0, actual_home - gc_home_goals_lost)
+        gc_actual_away = max(0, actual_away - gc_away_goals_lost)
 
-        # ------------------------------------------------------------------
-        # EPV (match-level, no shot decomposition available)
-        # ------------------------------------------------------------------
-        match_epv = epv_df[epv_df["match_id"] == match_id]
-        home_total_epv = match_epv[match_epv['team'] == row['home_team']]['EPV'].values[0] if not match_epv.empty else 0
-        away_total_epv = match_epv[match_epv['team'] == row['away_team']]['EPV'].values[0] if not match_epv.empty else 0
+        # ── gc shots: exclude shots at or after garbage time ──────────────────
+        gc_shots = match_shots[match_shots['min'] < gt_start] if gt_start < float('inf') else match_shots
 
-        # ------------------------------------------------------------------
-        # Distribution 1: actual goals — Poisson on observed scoreline
-        # ------------------------------------------------------------------
+        # ── Base possession-aggregated xG ─────────────────────────────────────
+        home_xg_probs,   home_xg_total   = aggregate_possession_xg(match_shots, 'home', 'expectedGoals')
+        away_xg_probs,   away_xg_total   = aggregate_possession_xg(match_shots, 'away', 'expectedGoals')
+        home_psxg_probs, _               = aggregate_possession_xg(match_shots, 'home', 'expectedGoalsOnTarget')
+        away_psxg_probs, _               = aggregate_possession_xg(match_shots, 'away', 'expectedGoalsOnTarget')
+
+        # ── gc possession-aggregated xG ───────────────────────────────────────
+        gc_home_xg_probs,   gc_home_xg_total   = aggregate_possession_xg(gc_shots, 'home', 'expectedGoals')
+        gc_away_xg_probs,   gc_away_xg_total   = aggregate_possession_xg(gc_shots, 'away', 'expectedGoals')
+        gc_home_psxg_probs, _                  = aggregate_possession_xg(gc_shots, 'home', 'expectedGoalsOnTarget')
+        gc_away_psxg_probs, _                  = aggregate_possession_xg(gc_shots, 'away', 'expectedGoalsOnTarget')
+
+        # ── EPV lookup ────────────────────────────────────────────────────────
+        match_epv = epv_df[epv_df['match_id'] == match_id]
+        home_epv  = match_epv[match_epv['team'] == row['home_team']]['EPV'].values[0]        if not match_epv.empty else 0
+        away_epv  = match_epv[match_epv['team'] == row['away_team']]['EPV'].values[0]        if not match_epv.empty else 0
+        gc_home_epv = match_epv[match_epv['team'] == row['home_team']]['competitive_epv'].values[0] \
+            if (has_gc_epv and not match_epv.empty) else home_epv
+        gc_away_epv = match_epv[match_epv['team'] == row['away_team']]['competitive_epv'].values[0] \
+            if (has_gc_epv and not match_epv.empty) else away_epv
+
+        # ── Distribution 1: actual goals ──────────────────────────────────────
         actual_goals_dist = {
             (h, a): poisson.pmf(h, max(actual_home, 1e-9)) * poisson.pmf(a, max(actual_away, 1e-9))
             for h, a in product(range(max_goals + 1), range(max_goals + 1))
         }
 
-        # ------------------------------------------------------------------
-        # Distribution 2: xG total — Poisson on possession-aggregated xG sum
-        # ------------------------------------------------------------------
+        # ── Distribution 2: xG total ──────────────────────────────────────────
         xg_total_dist = {
             (h, a): poisson.pmf(h, max(home_xg_total, 1e-9)) * poisson.pmf(a, max(away_xg_total, 1e-9))
             for h, a in product(range(max_goals + 1), range(max_goals + 1))
         }
 
-        # ------------------------------------------------------------------
-        # Distribution 3: PSxG — Poisson-Binomial on possession PSxG array
-        # ------------------------------------------------------------------
-        psxg_game_probs = simulate_game_poisson_binomial(home_psxg_probs, away_psxg_probs, max_goals)
-        psxg_pb_lookup = {(sp['home_goals'], sp['away_goals']): sp['probability'] for sp in psxg_game_probs}
+        # ── Distribution 3: PSxG Poisson-Binomial ─────────────────────────────
+        psxg_lookup = {
+            (sp['home_goals'], sp['away_goals']): sp['probability']
+            for sp in simulate_game_poisson_binomial(home_psxg_probs, away_psxg_probs, max_goals)
+        }
 
-        # ------------------------------------------------------------------
-        # Distribution 4: Bernoulli xG — Poisson-Binomial on possession xG array
-        # ------------------------------------------------------------------
-        bernoulli_game_probs = simulate_game_poisson_binomial(home_xg_probs, away_xg_probs, max_goals)
-        bernoulli_lookup = {(sp['home_goals'], sp['away_goals']): sp['probability'] for sp in bernoulli_game_probs}
+        # ── Distribution 4: Bernoulli xG Poisson-Binomial ─────────────────────
+        bernoulli_lookup = {
+            (sp['home_goals'], sp['away_goals']): sp['probability']
+            for sp in simulate_game_poisson_binomial(home_xg_probs, away_xg_probs, max_goals)
+        }
 
-        # ------------------------------------------------------------------
-        # Distribution 5: EPV — Poisson on EPV totals
-        # ------------------------------------------------------------------
+        # ── Distribution 5: EPV ───────────────────────────────────────────────
         epv_dist = {
-            (h, a): poisson.pmf(h, max(home_total_epv, 1e-9)) * poisson.pmf(a, max(away_total_epv, 1e-9))
+            (h, a): poisson.pmf(h, max(home_epv, 1e-9)) * poisson.pmf(a, max(away_epv, 1e-9))
             for h, a in product(range(max_goals + 1), range(max_goals + 1))
         }
 
-        # ------------------------------------------------------------------
-        # Blend all five distributions
-        # ------------------------------------------------------------------
+        # ── gc Distribution 1: competitive actual goals ────────────────────────
+        gc_actual_goals_dist = {
+            (h, a): poisson.pmf(h, max(gc_actual_home, 1e-9)) * poisson.pmf(a, max(gc_actual_away, 1e-9))
+            for h, a in product(range(max_goals + 1), range(max_goals + 1))
+        }
+
+        # ── gc Distribution 2: competitive xG total ───────────────────────────
+        gc_xg_total_dist = {
+            (h, a): poisson.pmf(h, max(gc_home_xg_total, 1e-9)) * poisson.pmf(a, max(gc_away_xg_total, 1e-9))
+            for h, a in product(range(max_goals + 1), range(max_goals + 1))
+        }
+
+        # ── gc Distribution 3: competitive PSxG ───────────────────────────────
+        gc_psxg_lookup = {
+            (sp['home_goals'], sp['away_goals']): sp['probability']
+            for sp in simulate_game_poisson_binomial(gc_home_psxg_probs, gc_away_psxg_probs, max_goals)
+        }
+
+        # ── gc Distribution 4: competitive Bernoulli xG ───────────────────────
+        gc_bernoulli_lookup = {
+            (sp['home_goals'], sp['away_goals']): sp['probability']
+            for sp in simulate_game_poisson_binomial(gc_home_xg_probs, gc_away_xg_probs, max_goals)
+        }
+
+        # ── gc Distribution 5: competitive EPV ────────────────────────────────
+        gc_epv_dist = {
+            (h, a): poisson.pmf(h, max(gc_home_epv, 1e-9)) * poisson.pmf(a, max(gc_away_epv, 1e-9))
+            for h, a in product(range(max_goals + 1), range(max_goals + 1))
+        }
+
+        # ── Blend all signals ─────────────────────────────────────────────────
         match_scorelines = []
         for home_goals, away_goals in product(range(max_goals + 1), range(max_goals + 1)):
-
-            p_actual   = actual_goals_dist.get((home_goals, away_goals), 0.0)
-            p_xg       = xg_total_dist.get((home_goals, away_goals), 0.0)
-            p_psxg     = psxg_pb_lookup.get((home_goals, away_goals), 0.0)
-            p_bernoulli = bernoulli_lookup.get((home_goals, away_goals), 0.0)
-            p_epv      = epv_dist.get((home_goals, away_goals), 0.0)
+            key = (home_goals, away_goals)
 
             final_weight = (
-                (goals_weight    * p_actual)    +
-                (xg_weight       * p_xg)        +
-                (psxg_weight     * p_psxg)      +
-                (bernoulli_weight * p_bernoulli) +
-                (epv_weight      * p_epv)
+                goals_weight      * actual_goals_dist.get(key, 0.0) +
+                xg_weight         * xg_total_dist.get(key, 0.0)     +
+                psxg_weight       * psxg_lookup.get(key, 0.0)        +
+                bernoulli_weight  * bernoulli_lookup.get(key, 0.0)   +
+                epv_weight        * epv_dist.get(key, 0.0)           +
+                gc_goals_weight   * gc_actual_goals_dist.get(key, 0.0) +
+                gc_xg_weight      * gc_xg_total_dist.get(key, 0.0)    +
+                gc_psxg_weight    * gc_psxg_lookup.get(key, 0.0)       +
+                gc_bernoulli_weight * gc_bernoulli_lookup.get(key, 0.0) +
+                gc_epv_weight     * gc_epv_dist.get(key, 0.0)
             )
 
-            if final_weight < min_prob_threshold and not (home_goals == actual_home and away_goals == actual_away):
+            if final_weight < min_prob_threshold and key != (actual_home, actual_away):
                 continue
 
             match_scorelines.append({
@@ -453,11 +570,11 @@ def create_weighted_scoreline_data(match_df: pd.DataFrame,
                 'away_goals': away_goals,
                 'weight':     final_weight,
                 'days_ago':   row['days_ago'],
-                'is_actual':  (home_goals == actual_home and away_goals == actual_away)
+                'is_actual':  key == (actual_home, actual_away),
             })
 
         total_m_weight = sum(s['weight'] for s in match_scorelines)
-        time_decay = np.exp(-decay_rate * row['days_ago'])
+        time_decay     = np.exp(-decay_rate * row['days_ago'])
 
         for s in match_scorelines:
             s['weight'] = (s['weight'] / total_m_weight) * time_decay
@@ -469,20 +586,9 @@ def create_weighted_scoreline_data(match_df: pd.DataFrame,
 def prepare_model_data(df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, int], int]:
     """
     Prepare data for PyMC model by creating team mappings and indices.
-
-    Parameters:
-    -----------
-    df : DataFrame
-        Processed match data
-
-    Returns:
-    --------
-    df : DataFrame with team indices added
-    team_mapping : dict mapping team names to indices
-    n_teams : number of teams
     """
-    teams = sorted(df["home_team"].unique())
-    n_teams = len(teams)
+    teams       = sorted(df["home_team"].unique())
+    n_teams     = len(teams)
     team_mapping = {team: idx for idx, team in enumerate(teams)}
 
     df = df.copy()
@@ -503,34 +609,27 @@ def load_and_process_data(
     """
     Complete pipeline: load raw data, create weighted scorelines, prepare for modelling.
 
-    Parameters:
-    -----------
-    db_path : str
-        Path to SQLite database
-    league : str or list
-        League identifier(s)
-    season : str
-        Season identifier (e.g., '2023-2024')
-    start : date, optional
-        Earliest match date to include (inclusive)
-    end : date, optional
-        Latest match date to include (inclusive)
-    **scoreline_kwargs :
-        Additional arguments forwarded to create_weighted_scoreline_data
-        (e.g. goals_weight, xg_weight, psxg_weight, bernoulli_weight, epv_weight)
-
-    Returns:
-    --------
-    processed_df : DataFrame ready for modelling
-    team_mapping : dict of team name to index mappings
-    n_teams : number of teams
+    Forwards all **scoreline_kwargs to create_weighted_scoreline_data, including
+    gc_* weight parameters for garbage-time-cleaned signals (default 0 = disabled).
     """
-    match_df, shot_df, red_df, epv_df = load_football_data(
+    match_df, shot_df, red_df, epv_df, all_shots_df, events_df = load_football_data(
         db_path, league, season, start=start, end=end
     )
 
-    weighted_df = create_weighted_scoreline_data(
-        match_df, shot_df, red_df, epv_df, **scoreline_kwargs
+    # Compute competitive EPV from WhoScored events and merge into epv_df
+    if not events_df.empty:
+        competitive_epv_df = compute_competitive_epv(events_df)
+        if not competitive_epv_df.empty:
+            epv_df = epv_df.merge(
+                competitive_epv_df,
+                on=['match_date', 'team'],
+                how='left',
+            )
+            # Fallback: use full EPV where no WhoScored data available
+            epv_df['competitive_epv'] = epv_df['competitive_epv'].fillna(epv_df['EPV'])
+
+    weighted_df  = create_weighted_scoreline_data(
+        match_df, shot_df, red_df, epv_df, all_shots_df, **scoreline_kwargs
     )
 
     processed_df, team_mapping, n_teams = prepare_model_data(weighted_df)
