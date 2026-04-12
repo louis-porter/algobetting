@@ -189,12 +189,12 @@ def render_combined_table(avg_table, position_freq, ratings_df,
     # ── Column headers ────────────────────────────────────────────────────────
     hdr_y = FIG_H - PAD_TOP + 0.18
     for x, lbl in [
-        (X_NAME,  'Team'),    (X_XGD, 'xGD'),  (X_XGF, 'xGF'),  (X_XGA, 'xGA'),
+        (X_NAME,  'Team'),    (X_XGD, 'Ovr.'),  (X_XGF, 'Att.'),  (X_XGA, 'Def.'),
         (X_PTS,   'Pts'),     (X_PGDD, 'GD'),
         (X_TITLE, 'Title %'), (X_TOP5, 'Top 5 %'), (X_TOP8, 'Top 8 %'), (X_REL, 'Rel %'),
     ]:
         ax.text(x, hdr_y, lbl, fontsize=7.8, color='#555',
-                va='center', ha='center', style='italic')
+                va='center', ha='center')
 
     ax.plot([0.15, FIG_W-0.15], [hdr_y-0.14]*2, color='#ddd', lw=0.7)
 
