@@ -312,8 +312,8 @@ def get_last_result(df_actual, team):
     opp     = last['away_team'] if is_home else last['home_team']
     tg      = hg if is_home else ag
     og      = ag if is_home else hg
-    outcome = 'W' if tg > og else ('D' if tg == og else 'L')
-    venue   = 'H' if is_home else 'A'
+    outcome = 'Win' if tg > og else ('Draw' if tg == og else 'Loss')
+    venue   = 'Home' if is_home else 'Away'
     return f'{hg}–{ag} ({venue} {outcome} vs {opp})'
 
 

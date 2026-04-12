@@ -60,11 +60,14 @@ def plot_xg_trend(
     xga_col=None,
     annotations=None,
     roll_n=10,
+    extra_ticks=None,
 ):
     """
     annotations : list of (date_str, label) tuples, e.g. [('2025-10-01', "Huesca's injury")]
                   Each draws a vertical line at the nearest match to that date.
     roll_n       : rolling window size shown in the y-axis label (default 10).
+    extra_ticks  : list of date strings to add as labelled x-axis ticks, e.g. ['2026-01-01'].
+                   Each snaps to the nearest match date.
     """
     # Use team's primary colour for xG for, secondary for xG against if registered
     if xgf_col is None or xga_col is None:
@@ -125,21 +128,44 @@ def plot_xg_trend(
     if annotations:
         import pandas as pd
         dates_series = pd.to_datetime(df["match_date"])
+        y_min = min(np.min(xgf), np.min(xga))
         y_max = max(np.max(xgf), np.max(xga))
+        y_range = y_max - y_min
+
+        # Reserve space below the data — scale buffer with the longest label
+        max_chars = max(len(label) for _, label in annotations)
+        y_buffer = y_range * max(0.12, 0.021 * max_chars)
+        ax.set_ylim(y_min - y_buffer, y_max + y_range * 0.05)
+
         for date_str, label in annotations:
             target = pd.Timestamp(date_str)
             idx = (dates_series - target).abs().idxmin()
             ax.axvline(idx, color="#555555", linewidth=1.2, linestyle="--", zorder=2, alpha=0.7)
-            ax.text(idx + 0.25, y_max * 0.97, label,
+            # va='top' anchors the label top at y_min; text hangs down into the buffer
+            ax.text(idx + 0.25, y_min, label,
                     fontsize=8.5, color="#555555", va="top", ha="left",
-                    style="italic")
+                    style="italic", rotation=90, clip_on=False)
 
     # ── Axes ──────────────────────────────────────────────────────────────────
-    ax.set_xticks([0, len(df) - 1])
-    ax.set_xticklabels(
-        [dates.iloc[0].strftime("%b %Y"), dates.iloc[-1].strftime("%b %Y")],
-        fontsize=10, color="#444444",
-    )
+    tick_positions = [0, len(df) - 1]
+    tick_labels    = [dates.iloc[0].strftime("%b %Y"), dates.iloc[-1].strftime("%b %Y")]
+
+    if extra_ticks:
+        import pandas as pd
+        dates_series = pd.to_datetime(df["match_date"])
+        for date_str in extra_ticks:
+            target = pd.Timestamp(date_str)
+            idx = int((dates_series - target).abs().idxmin())
+            label = target.strftime("%b %Y")
+            if idx not in tick_positions:
+                tick_positions.append(idx)
+                tick_labels.append(label)
+        # Sort by position so ticks appear left-to-right
+        paired = sorted(zip(tick_positions, tick_labels))
+        tick_positions, tick_labels = zip(*paired)
+
+    ax.set_xticks(tick_positions)
+    ax.set_xticklabels(tick_labels, fontsize=10, color="#444444")
     ax.set_ylabel(f"npxG ({roll_n}-game rolling avg)", fontsize=9, color="#666666", labelpad=8)
     ax.tick_params(axis="y", labelsize=9, labelcolor="#666666")
     ax.yaxis.set_major_formatter(ticker.FormatStrFormatter("%.1f"))
@@ -170,6 +196,6 @@ def plot_xg_trend(
     ax.text(0.001, 1.025, subtitle, transform=ax.transAxes, fontsize=9,  color="#888888",   va="bottom", ha="left")
 
     if save_path:
-        plt.savefig(save_path, dpi=180, bbox_inches="tight", facecolor=fig.get_facecolor())
+        plt.savefig(save_path, dpi=300, bbox_inches="tight", facecolor=fig.get_facecolor())
 
     plt.show()

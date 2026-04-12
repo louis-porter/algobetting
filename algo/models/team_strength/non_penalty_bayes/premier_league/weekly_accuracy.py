@@ -1,9 +1,9 @@
 """
-Premier League — weekly MAE evaluator.
+Premier League — per-gameweek MAE evaluator.
 
-Runs two variants side-by-side every week:
-  BASE  — normal weights, no garbage-time adjustment
-  GC    — same weights applied to competitive-minutes-only signals
+Uses custom_gw from the DB to define evaluation windows, so each window
+maps exactly to one gameweek (Fri-Mon or Tue-Thu) with no team appearing
+twice in the same window.
 
 Results are printed and written to weekly_accuracy_results.csv.
 
@@ -49,20 +49,21 @@ BASELINE_AWAY_PENS = 0.101 * 0.78
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def predict_week(df, actual_df, prediction_date):
+def predict_gw(df, actual_df, gw, gw_start, gw_end):
     """
-    Fit model on all data before prediction_date.
-    Evaluate on actual scorelines (incl. penalties) in [prediction_date, prediction_date + 7 days).
-    Returns dict of metrics, or None if no test matches that week.
+    Fit model on all data strictly before gw_start.
+    Evaluate on actual scorelines (incl. penalties) within [gw_start, gw_end].
+    Returns dict of metrics, or None if no test matches in the window.
     """
     df = df.copy()
     df['match_date'] = pd.to_datetime(df['match_date'])
-    prediction_date  = pd.to_datetime(prediction_date)
+    gw_start = pd.to_datetime(gw_start)
+    gw_end   = pd.to_datetime(gw_end)
 
-    train_df = df[df['match_date'] < prediction_date].copy()
+    train_df = df[df['match_date'] < gw_start].copy()
     test_df  = df[
-        (df['match_date'] >= prediction_date) &
-        (df['match_date'] <  prediction_date + pd.Timedelta(days=7)) &
+        (df['match_date'] >= gw_start) &
+        (df['match_date'] <= gw_end) &
         (df['is_actual']  == True)
     ].copy()
 
@@ -122,7 +123,9 @@ def predict_week(df, actual_df, prediction_date):
     )
 
     return {
-        'date':            prediction_date,
+        'gw':              gw,
+        'gw_start':        gw_start.date(),
+        'gw_end':          gw_end.date(),
         'errors':          errors,
         'mae':             float(errors.mean()),
         'matches':         len(test_df),
@@ -166,35 +169,47 @@ def load_actual_full_scores(db_path, league, season):
     return df
 
 
+def load_gw_windows(db_path, league, season, eval_start, eval_end):
+    """Return a DataFrame of custom GW windows within the evaluation range."""
+    conn = sqlite3.connect(db_path)
+    gw_df = pd.read_sql("""
+        SELECT custom_gw, MIN(match_date) AS gw_start, MAX(match_date) AS gw_end
+        FROM matches
+        WHERE league_id = ? AND season = ? AND home_goals IS NOT NULL
+          AND custom_gw IS NOT NULL
+        GROUP BY custom_gw
+        ORDER BY custom_gw
+    """, conn, params=[league, season])
+    conn.close()
+
+    gw_df = gw_df[
+        (gw_df['gw_start'] >= eval_start) &
+        (gw_df['gw_end']   <= eval_end)
+    ].reset_index(drop=True)
+    return gw_df
+
+
 def main():
     actual_df = load_actual_full_scores(DB_PATH, LEAGUE, SEASON)
     print(f"Loaded {len(actual_df)} full-score matches from matches table.")
 
-    shared_kwargs = dict(
-        db_path=DB_PATH,
-        league=LEAGUE,
-        season=SEASON,
-        decay_rate=DECAY_RATE,
-    )
-
     print("Loading dataset...")
     df, _, _ = load_and_process_data(
-        **shared_kwargs,
-        goals_weight=GOALS_WEIGHT,
-        xg_weight=XG_WEIGHT,
-        psxg_weight=PSXG_WEIGHT,
-        epv_weight=EPV_WEIGHT,
+        db_path=DB_PATH, league=LEAGUE, season=SEASON,
+        decay_rate=DECAY_RATE,
+        goals_weight=GOALS_WEIGHT, xg_weight=XG_WEIGHT,
+        psxg_weight=PSXG_WEIGHT, epv_weight=EPV_WEIGHT,
     )
 
-    dates   = pd.date_range(EVAL_START, EVAL_END, freq='W-TUE')
+    gw_windows = load_gw_windows(DB_PATH, LEAGUE, SEASON, EVAL_START, EVAL_END)
     records = []
 
-    print(f"\nRunning {len(dates)} weekly evaluations...")
-    for d in dates:
-        r = predict_week(df, actual_df, d)
+    print(f"\nRunning {len(gw_windows)} gameweek evaluations (GW windows from DB)...")
+    for _, row in gw_windows.iterrows():
+        r = predict_gw(df, actual_df, row['custom_gw'], row['gw_start'], row['gw_end'])
         if r:
             records.append(r)
-            print(f"  {d.date()}  MAE={r['mae']:.3f}  n={r['matches']}")
+            print(f"  GW{r['gw']:2d}  {r['gw_start']} → {r['gw_end']}  MAE={r['mae']:.3f}  n={r['matches']}")
 
     if not records:
         print("No results — check EVAL_START/EVAL_END against available data.")
@@ -207,6 +222,7 @@ def main():
     out = os.path.join(os.path.dirname(__file__), 'outputs', 'weekly_accuracy_results.csv')
     results.drop(columns=['errors']).to_csv(out, index=False)
     print(f"\nSaved: {out}")
+    print(results[['gw', 'gw_start', 'gw_end', 'matches', 'mae']].to_string(index=False))
 
 
 if __name__ == '__main__':

@@ -103,7 +103,14 @@ def process_json_files(folder_path):
             try:
                 match_date = data['matchFacts']['infoBox']['Match Date']['utcTime']
                 league = data['matchFacts']['infoBox']['Tournament']['id']
-                
+
+                # Extract round number — new format (general.matchRound) or old format (infoBox.Tournament.round)
+                round_num = None
+                if 'general' in data:
+                    round_num = data['general'].get('matchRound') or data['general'].get('leagueRoundName')
+                if round_num is None:
+                    round_num = data['matchFacts']['infoBox']['Tournament'].get('round')
+
                 home_goals = 0
                 away_goals = 0
                 ft_found = False
@@ -111,15 +118,13 @@ def process_json_files(folder_path):
                     ft_found = True
                     if event.get("type") == "Goal":
                         # Get situation from the nested shotmapEvent object
-                        situation = event.get("shotmapEvent", {}).get("situation")                        
+                        situation = event.get("shotmapEvent", {}).get("situation")
                         if situation != "Penalty":
                             ft_found = True
                             if event.get("isHome") == True:
                                 home_goals += 1
                             elif event.get("isHome") == False:
                                 away_goals += 1
-                                        
-
 
                 if ft_found:
                     match_info = {
@@ -129,12 +134,13 @@ def process_json_files(folder_path):
                         'home_team': home_team,
                         'home_goals': home_goals,
                         'away_team': away_team,
-                        'away_goals': away_goals
+                        'away_goals': away_goals,
+                        'round': round_num,
                     }
                     all_matches.append(match_info)
                 else:
                     print(f"Warning: No FT event found for match {match_id}")
-                    
+
             except KeyError as e:
                 print(f"Warning: Missing match data key {e} in {file_path.name}")
 
@@ -304,10 +310,10 @@ def process_json_files(folder_path):
         matches_df = pd.DataFrame(all_matches)
         # Convert match_date to yyyy-mm-dd format
         matches_df['match_date'] = pd.to_datetime(matches_df['match_date']).dt.strftime('%Y-%m-%d')
-        matches_df = matches_df[["match_id", "league_id", "match_date", "home_team", "home_goals", "away_team", "away_goals"]]
+        matches_df = matches_df[["match_id", "league_id", "match_date", "home_team", "home_goals", "away_team", "away_goals", "round"]]
         print(f"Created matches DataFrame with {len(matches_df)} rows")
     else:
-        matches_df = pd.DataFrame(columns=["match_id", "league_id", "match_date", "home_team", "home_goals", "away_team", "away_goals"])
+        matches_df = pd.DataFrame(columns=["match_id", "league_id", "match_date", "home_team", "home_goals", "away_team", "away_goals", "round"])
         print("No match data found")
     
     # Match Stats DataFrame

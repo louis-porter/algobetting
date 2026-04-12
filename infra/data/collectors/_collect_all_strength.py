@@ -28,6 +28,7 @@ sys.path.insert(0, str(_collectors / "whoscored"))
 from fotmob.fotmob_season_downloader import store_season, LEAGUES
 from fotmob.fotmob_etl_database import main as fotmob_etl_main
 from fotmob.fotmob_etl_database_non_penalty import main as fotmob_etl_np_main
+from fotmob.assign_gameweeks import write_to_db as assign_gameweeks_to_db
 from whoscored.whoscored_scraper import process_epv_data
 
 
@@ -134,6 +135,8 @@ def main():
         fotmob_etl_main(season=season_label, league=args.league)
         print("\n── Step 2b: FotMob ETL (non-penalty) → SQLite ────────────────")
         fotmob_etl_np_main(season=season_label, league=args.league)
+        print("\n── Step 2c: Assign custom gameweeks ──────────────────────────")
+        assign_gameweeks_to_db(league=args.league, season=season_label)
     else:
         print("\n── Step 2: FotMob ETL [SKIPPED] ──────────────────────────────")
 
