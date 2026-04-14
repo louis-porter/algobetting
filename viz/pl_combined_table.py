@@ -128,7 +128,7 @@ def render_combined_table(avg_table, position_freq, ratings_df,
         if url:
             badge_cache[url] = _fetch_badge(url)
 
-    teams_sorted   = avg_table.sort_values('avg_position')['team'].tolist()
+    teams_sorted   = avg_table.sort_values(['avg_points', 'avg_goal_difference', 'avg_goals_for'], ascending=False)['team'].tolist()
     n_teams        = len(teams_sorted)
     ratings_lookup = ratings_df.set_index('team') if ratings_df is not None else None
 

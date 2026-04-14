@@ -109,10 +109,13 @@ def render_html_export(form_merged, standings, ratings_ranked, team_logos,
         else:
             next_gw_str = 'TBC'
 
+        form_rating = f"{row['net_rating']:+.2f}"
+
         block = (
             f"**{rank}. {team} ({pts}pts, {table_str}) {arrow}**\n"
             f"**Last Ranking:** &nbsp;{prev_str}\n"
             f"**GW Result:** &nbsp;{last_result}\n"
+            f"**Form Rating:** &nbsp;{form_rating}\n"
             f"**BEST Attack Rating:** &nbsp;{att_val} ({att_rank_str})\n"
             f"**BEST Defence Rating:** &nbsp;{def_val} ({def_rank_str})\n"
             f"**PL Form:** &nbsp;{form_str}\n"

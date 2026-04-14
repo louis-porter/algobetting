@@ -169,10 +169,10 @@ def render_power_rankings(form_merged, df_actual, team_logos,
     DOT_GAP   = 0.23   # → last (5th) dot at 3.78 + 4×0.23 = 4.70
 
     # Net-rating bar: trough from X_BAR_L to X_BAR_R, zero at X_BAR_C
-    X_BAR_L   = 4.98
+    X_BAR_L   = 5.40
     HALF_W    = 0.65   # wider bar
-    X_BAR_C   = X_BAR_L + HALF_W          # 5.63 — the zero line
-    X_BAR_R   = X_BAR_L + HALF_W * 2      # 6.28
+    X_BAR_C   = X_BAR_L + HALF_W          # 6.05 — the zero line
+    X_BAR_R   = X_BAR_L + HALF_W * 2      # 6.70
 
     # Change badge: pill centered at X_CHANGE — pushed right for clearance
     X_CHANGE  = 7.80
@@ -191,9 +191,9 @@ def render_power_rankings(form_merged, df_actual, team_logos,
     title = f'PL Power Rankings  -  {gw_label}' if gw_label else 'PL Power Rankings'
     ax.text(0.18, FIG_H - 0.20, title,
             fontsize=17, fontweight='bold', color='#111', va='top', ha='left')
-    ax.text(0.18, FIG_H - 0.45,
-            f'Updated: {date.today().strftime("%-d %b %Y")}',
-            fontsize=8.5, color='#888', va='top', ha='left')
+    # ax.text(0.18, FIG_H - 0.45,
+    #         f'Updated: {date.today().strftime("%-d %b %Y")}',
+    #         fontsize=8.5, color='#888', va='top', ha='left')
     
     # ── Column headers ────────────────────────────────────────────────────────
     hdr_y  = FIG_H - PAD_TOP + ROW_H * 0.55
@@ -286,21 +286,21 @@ def render_power_rankings(form_merged, df_actual, team_logos,
         # Value label — inside the fill once it's wide enough, otherwise outside
         sign     = '+' if net > 0 else ''
         lbl      = f'{sign}{net:.2f}'
-        INSIDE_T = 0.26   # fill_w threshold to flip label inside bar
+        INSIDE_T = 0.36   # fill_w threshold to flip label inside bar
         if fill_w >= INSIDE_T:
             # Inside the fill: anchor near the outer edge, white text
             if net >= 0:
-                lbl_x, lbl_ha = X_BAR_C + fill_w - 0.01, 'right'
+                lbl_x, lbl_ha = X_BAR_C + fill_w - 0.02, 'right'
             else:
-                lbl_x, lbl_ha = X_BAR_C - fill_w + 0.01, 'left'
+                lbl_x, lbl_ha = X_BAR_C - fill_w + 0.02, 'left'
             lbl_col = 'white'
         else:
             # Outside the fill: stay within the trough, dark text
             if net >= 0:
-                lbl_x  = min(X_BAR_C + fill_w + 0.05, X_BAR_R - 0.02)
+                lbl_x  = min(X_BAR_C + fill_w + 0.04, X_BAR_R - 0.02)
                 lbl_ha = 'left'
             else:
-                lbl_x  = max(X_BAR_C - fill_w - 0.05, X_BAR_L + 0.02)
+                lbl_x  = max(X_BAR_C - fill_w - 0.04, X_BAR_L + 0.02)
                 lbl_ha = 'right'
             lbl_col = '#333'
         ax.text(lbl_x, rc, lbl,
