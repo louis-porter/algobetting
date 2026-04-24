@@ -36,7 +36,7 @@ TEAM_COLORS = {
     'Nordsjælland':     ('#E2001A', '#231F20'),   # red, black
     'Nordsjaelland':    ('#E2001A', '#231F20'),
 
-    'AGF':              ('#8B0000', '#B0B0B0'),   # dark red, grey (white → grey)
+    'AGF':              ('#8B0000', '#1B2A4A'),   # dark red, navy (away kit)
     'Aarhus':           ('#8B0000', '#B0B0B0'),
 
     'Randers FC':       ('#002D72', '#6CABDD'),   # dark blue, sky blue

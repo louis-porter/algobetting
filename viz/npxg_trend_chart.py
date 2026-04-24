@@ -116,7 +116,9 @@ def plot_xg_trend(
     ax.plot(x, trend(x, xga), color=xga_col, linewidth=1.2, linestyle="--", alpha=0.55, zorder=2)
 
     # ── Season change vertical line ───────────────────────────────────────────
+    y_min = min(np.min(xgf), np.min(xga))
     y_max = max(np.max(xgf), np.max(xga))
+    y_range = y_max - y_min
     for idx in season_change_idx:
         ax.axvline(idx, color="#888888", linewidth=1.2, linestyle=":", zorder=2)
         near_right = max(xgf[idx], xga[idx]) > (y_max * 0.85)
@@ -128,14 +130,11 @@ def plot_xg_trend(
     if annotations:
         import pandas as pd
         dates_series = pd.to_datetime(df["match_date"])
-        y_min = min(np.min(xgf), np.min(xga))
-        y_max = max(np.max(xgf), np.max(xga))
-        y_range = y_max - y_min
 
         # Reserve space below the data — scale buffer with the longest label
         max_chars = max(len(label) for _, label in annotations)
         y_buffer = y_range * max(0.12, 0.021 * max_chars)
-        ax.set_ylim(y_min - y_buffer, y_max + y_range * 0.05)
+        ax.set_ylim(y_min - y_buffer, y_max + y_range * 0.22)
 
         for date_str, label in annotations:
             target = pd.Timestamp(date_str)
@@ -145,6 +144,10 @@ def plot_xg_trend(
             ax.text(idx + 0.25, y_min, label,
                     fontsize=8.5, color="#555555", va="top", ha="left",
                     style="italic", rotation=90, clip_on=False)
+
+    # ── Y-axis limits — always give headroom above the data for the legend ────
+    if not annotations:
+        ax.set_ylim(y_min - y_range * 0.05, y_max + y_range * 0.22)
 
     # ── Axes ──────────────────────────────────────────────────────────────────
     tick_positions = [0, len(df) - 1]

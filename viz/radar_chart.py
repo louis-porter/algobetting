@@ -101,23 +101,23 @@ def make_radar(
         color_a = color_a or _ca
         color_b = color_b or _cb
 
-    # ── Compute axis ranges from league distribution (with buffer) ────────────
-    # Buffer keeps worst/best teams off the very centre/edge of the radar
+    # ── Compute axis ranges from league distribution ──────────────────────────
     axis_ranges = {}
     for _, col, _, _ in metrics:
-        lo   = league_df[col].min()
-        hi   = league_df[col].max()
-        pad  = (hi - lo) * 0.1
-        axis_ranges[col] = (lo - pad, hi + pad)
+        lo = league_df[col].min()
+        hi = league_df[col].max()
+        axis_ranges[col] = (lo, hi)
 
     labels = [m[0] for m in metrics]
     N      = len(labels)
     angles = np.linspace(0, 2 * np.pi, N, endpoint=False).tolist()
     angles += angles[:1]
 
+    MIN_R = 0.08  # floor so even the worst team has a visible bump off center
+
     def norm(val, lo, hi, invert):
         n = float(np.clip((val - lo) / (hi - lo), 0, 1))
-        return 1 - n if invert else n
+        return max(MIN_R, 1 - n if invert else n)
 
     def season_vals(season):
         vals = [norm(comp.loc[season, col], *axis_ranges[col], inv)
@@ -148,7 +148,7 @@ def make_radar(
 
     # ── Data polygons — opaque fills, no outline ──────────────────────────────
     for i, (v, col) in enumerate([(va, color_a), (vb, color_b)]):
-        ax.fill(angles, v, color=col, alpha=0.55, zorder=2 + i)
+        ax.fill(angles, v, color=col, alpha=0.35, zorder=2 + i)
 
     # ── Turn off default matplotlib grid/ticks (we drew our own) ──────────────
     ax.set_yticks([])
@@ -195,7 +195,7 @@ def make_radar(
             ax.text(angle, r, label,
                     ha='center', va='center',
                     rotation=rot, rotation_mode='anchor',
-                    fontsize=8, color='#666666', zorder=5)
+                    fontsize=8, color='#444444', zorder=5)
 
     # ── Title: centred, coloured by team/season ───────────────────────────────
     sa = label_a or season_a

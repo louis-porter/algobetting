@@ -30,10 +30,11 @@ def predict_match(home_team, away_team, trace, team_mapping,
                   away_pen_rate=BASELINE_AWAY_PENS):
     hi = team_mapping[home_team]
     ai = team_mapping[away_team]
-    n  = len(team_mapping)
 
-    att  = trace.posterior['att_str'].values.reshape(-1, n)
-    defn = trace.posterior['def_str'].values.reshape(-1, n)
+    att_raw = trace.posterior['att_str'].values   # (chains, draws, n_teams)
+    n_trace = att_raw.shape[-1]
+    att  = att_raw.reshape(-1, n_trace)
+    defn = trace.posterior['def_str'].values.reshape(-1, n_trace)
     base = trace.posterior['baseline'].values.flatten()
     hadv = trace.posterior['home_adv'].values.flatten()
 
@@ -56,42 +57,89 @@ def predict_match(home_team, away_team, trace, team_mapping,
 
 def precompute_expected_goals(trace, team_mapping, df_actual,
                               home_pen_rate=BASELINE_HOME_PENS,
-                              away_pen_rate=BASELINE_AWAY_PENS):
+                              away_pen_rate=BASELINE_AWAY_PENS,
+                              remaining_fixtures=None):
     """
     Returns
     -------
-    actual_results : dict  (home, away) → (hg, ag, h_xg, a_xg)
+    actual_results : list of (home, away, hg, ag, h_xg, a_xg)
+        Every played game as a tuple. Using a list (not a dict) so that the same
+        (home, away) pair can appear multiple times — this happens in leagues with
+        playoff groups that replay regular-season matchups (e.g. Superligaen).
     expected_goals : dict  (home, away) → (h_xg, a_xg)   for unplayed fixtures
+
+    Parameters
+    ----------
+    remaining_fixtures : list of dict with 'home'/'away' keys, optional
+        When provided, only these specific pairs are treated as unplayed fixtures
+        to simulate. Use this for leagues with non-round-robin playoffs (e.g.
+        Superligaen championship/relegation split). When None, falls back to the
+        full round-robin assumption (all non-played team pairs).
     """
     teams = list(team_mapping.keys())
-    actual_results = {}
+    actual_results = []   # list of (ht, at, hg, ag, hxg, axg) — preserves duplicates
     expected_goals = {}
 
-    played = {}
-    if df_actual is not None and 'is_actual' in df_actual.columns:
-        for _, row in df_actual[df_actual['is_actual']].iterrows():
-            played[(row['home_team'], row['away_team'])] = row
+    if remaining_fixtures is not None:
+        fixture_pairs = [(f['home'], f['away']) for f in remaining_fixtures]
+        remaining_set = set(fixture_pairs)
 
-    print(f"Pre-computing xG for {len(teams) * (len(teams)-1)} fixtures...")
-    for home in teams:
-        for away in teams:
-            if home == away:
+        # Collect all played games as individual rows (not deduped by pair)
+        played_rows = []
+        if df_actual is not None and 'is_actual' in df_actual.columns:
+            for _, row in df_actual[df_actual['is_actual']].iterrows():
+                if pd.notna(row['home_goals']) and pd.notna(row['away_goals']):
+                    played_rows.append((row['home_team'], row['away_team'],
+                                        int(row['home_goals']), int(row['away_goals'])))
+
+        # Compute xG for all unique pairs (played + remaining)
+        played_pairs = set((h, a) for h, a, _, _ in played_rows)
+        all_unique_pairs = played_pairs | remaining_set
+        print(f"Pre-computing xG for {len(all_unique_pairs)} unique pairs...")
+        xg_cache = {}
+        for home, away in all_unique_pairs:
+            if home not in team_mapping or away not in team_mapping:
                 continue
-            key  = (home, away)
             pred = predict_match(home, away, trace, team_mapping,
                                  home_pen_rate, away_pen_rate)
-            hxg, axg = pred['home_goals_expected'], pred['away_goals_expected']
+            xg_cache[(home, away)] = (pred['home_goals_expected'], pred['away_goals_expected'])
 
-            if key in played:
-                row = played[key]
-                hg  = int(row['home_goals']) if pd.notna(row['home_goals']) else None
-                ag  = int(row['away_goals']) if pd.notna(row['away_goals']) else None
-                if hg is not None and ag is not None:
-                    actual_results[key] = (hg, ag, hxg, axg)
+        # Every played game → actual_results list (duplicates preserved)
+        for home, away, hg, ag in played_rows:
+            if (home, away) in xg_cache:
+                hxg, axg = xg_cache[(home, away)]
+                actual_results.append((home, away, hg, ag, hxg, axg))
+
+        # Remaining fixtures → expected_goals
+        for home, away in fixture_pairs:
+            if (home, away) in xg_cache:
+                expected_goals[(home, away)] = xg_cache[(home, away)]
+    else:
+        played = {}
+        if df_actual is not None and 'is_actual' in df_actual.columns:
+            for _, row in df_actual[df_actual['is_actual']].iterrows():
+                played[(row['home_team'], row['away_team'])] = row
+
+        print(f"Pre-computing xG for {len(teams) * (len(teams)-1)} fixtures...")
+        for home in teams:
+            for away in teams:
+                if home == away:
+                    continue
+                key  = (home, away)
+                pred = predict_match(home, away, trace, team_mapping,
+                                     home_pen_rate, away_pen_rate)
+                hxg, axg = pred['home_goals_expected'], pred['away_goals_expected']
+
+                if key in played:
+                    row = played[key]
+                    hg  = int(row['home_goals']) if pd.notna(row['home_goals']) else None
+                    ag  = int(row['away_goals']) if pd.notna(row['away_goals']) else None
+                    if hg is not None and ag is not None:
+                        actual_results.append((home, away, hg, ag, hxg, axg))
+                    else:
+                        expected_goals[key] = (hxg, axg)
                 else:
                     expected_goals[key] = (hxg, axg)
-            else:
-                expected_goals[key] = (hxg, axg)
 
     print(f"  Played: {len(actual_results)}   To simulate: {len(expected_goals)}")
     return actual_results, expected_goals
@@ -125,7 +173,7 @@ def simulate_full_season_fast(actual_results, expected_goals, teams):
         hg_sim  = np.random.poisson(hxg_arr)
         ag_sim  = np.random.poisson(axg_arr)
 
-    for (ht, at), (hg, ag, hxg, axg) in actual_results.items():
+    for ht, at, hg, ag, hxg, axg in actual_results:
         _update_table(tbl, ht, at, hg, ag, hxg, axg)
 
     for i, (ht, at) in enumerate(unplayed):
@@ -142,12 +190,14 @@ def simulate_full_season_fast(actual_results, expected_goals, teams):
 
 def run_multiple_seasons(n_simulations, trace, team_mapping, df_actual,
                          home_pen_rate=BASELINE_HOME_PENS,
-                         away_pen_rate=BASELINE_AWAY_PENS):
+                         away_pen_rate=BASELINE_AWAY_PENS,
+                         remaining_fixtures=None):
     teams   = list(team_mapping.keys())
     n       = len(teams)
 
     actual_results, expected_goals = precompute_expected_goals(
-        trace, team_mapping, df_actual, home_pen_rate, away_pen_rate)
+        trace, team_mapping, df_actual, home_pen_rate, away_pen_rate,
+        remaining_fixtures=remaining_fixtures)
 
     acc = {k: np.zeros(n, dtype=np.float64) for k in
            ['pts', 'pts_sq', 'w', 'd', 'l', 'gf', 'ga', 'xgf', 'xga', 'pos']}
@@ -239,10 +289,10 @@ def load_actual_results(db_path, league, season):
     return df
 
 
-def get_actual_standings(actual_results_dict, teams):
-    """Current league table derived from actual_results dict."""
+def get_actual_standings(actual_results_list, teams):
+    """Current league table derived from actual_results list."""
     s = {t: {'pts':0,'w':0,'d':0,'l':0,'gf':0,'ga':0} for t in teams}
-    for (ht, at), (hg, ag, *_) in actual_results_dict.items():
+    for ht, at, hg, ag, *_ in actual_results_list:
         s[ht]['gf'] += hg;  s[ht]['ga'] += ag
         s[at]['gf'] += ag;  s[at]['ga'] += hg
         if hg > ag:
