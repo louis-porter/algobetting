@@ -30,6 +30,7 @@ from fotmob.fotmob_etl_database import main as fotmob_etl_main
 from fotmob.fotmob_etl_database_non_penalty import main as fotmob_etl_np_main
 from fotmob.assign_gameweeks import write_to_db as assign_gameweeks_to_db
 from whoscored.whoscored_scraper import process_epv_data
+from whoscored.add_epv_to_events import add_epv_to_events_table
 
 
 def _default_season():
@@ -150,6 +151,8 @@ def main():
             season_label=season_label,
             division=args.league,
         )
+        print("\n── Step 3b: Write EPV values to match_events ─────────────────")
+        add_epv_to_events_table()
     else:
         print("\n── Step 3: WhoScored EPV [SKIPPED] ───────────────────────────")
 

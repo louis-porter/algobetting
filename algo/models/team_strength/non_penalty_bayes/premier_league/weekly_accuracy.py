@@ -31,11 +31,11 @@ DB_PATH   = os.path.join(REPO_ROOT, 'infra', 'data', 'db', 'fotmob.db')
 LEAGUE = 'Premier_League'
 SEASON = '2025-2026'
 
-EVAL_START = '2025-09-01'
-EVAL_END   = '2026-04-01'
+EVAL_START = '2025-09-22'
+EVAL_END   = '2026-05-30'
 
-N_SAMPLES = 10_000
-N_TUNE    = 5000
+N_SAMPLES = 20_000
+N_TUNE    = 10_000
 
 DECAY_RATE   = 0.0018
 GOALS_WEIGHT = 0.25
@@ -122,6 +122,19 @@ def predict_gw(df, actual_df, gw, gw_start, gw_end):
         np.concatenate([ah, aa])
     )
 
+    match_rows = [
+        {
+            'gw':             gw,
+            'home_team':      test_df['home_team'].iloc[i],
+            'away_team':      test_df['away_team'].iloc[i],
+            'home_predicted': float(home_mu[i]),
+            'away_predicted': float(away_mu[i]),
+            'home_actual':    float(ah[i]),
+            'away_actual':    float(aa[i]),
+        }
+        for i in range(len(test_df))
+    ]
+
     return {
         'gw':              gw,
         'gw_start':        gw_start.date(),
@@ -135,23 +148,123 @@ def predict_gw(df, actual_df, gw, gw_start, gw_end):
         'home_predicted':  float(np.mean(home_mu)),
         'away_predicted':  float(np.mean(away_mu)),
         'total_predicted': float(np.mean(home_mu + away_mu)),
+        'match_rows':      match_rows,
     }
 
 
-def print_summary(label, results):
-    all_errors = np.concatenate(results['errors'].values)
-    pooled_mae = float(all_errors.mean())
-    print(f"\n=== {label} ===")
-    print(f"Weeks evaluated : {len(results)}")
-    print(f"Predictions     : {len(all_errors)}")
-    print(f"MAE (pooled)    : {pooled_mae:.4f}")
-    print(f"Home goals      : actual {results['home_actual'].mean():.2f}  "
-          f"pred {results['home_predicted'].mean():.2f}")
-    print(f"Away goals      : actual {results['away_actual'].mean():.2f}  "
-          f"pred {results['away_predicted'].mean():.2f}")
-    print(f"Total/game      : actual {results['total_actual'].mean():.2f}  "
-          f"pred {results['total_predicted'].mean():.2f}")
-    return pooled_mae
+def build_team_breakdown(records):
+    """Per-team scored and conceded accuracy."""
+    rows = [m for r in records for m in r['match_rows']]
+    df   = pd.DataFrame(rows)
+
+    home = pd.DataFrame({
+        'team':            df['home_team'].values,
+        'sc_actual':       df['home_actual'].values,
+        'sc_pred':         df['home_predicted'].values,
+        'co_actual':       df['away_actual'].values,
+        'co_pred':         df['away_predicted'].values,
+    })
+    away = pd.DataFrame({
+        'team':            df['away_team'].values,
+        'sc_actual':       df['away_actual'].values,
+        'sc_pred':         df['away_predicted'].values,
+        'co_actual':       df['home_actual'].values,
+        'co_pred':         df['home_predicted'].values,
+    })
+
+    combined = pd.concat([home, away], ignore_index=True)
+    combined['err_sc'] = (combined['sc_pred'] - combined['sc_actual']).abs()
+    combined['err_co'] = (combined['co_pred'] - combined['co_actual']).abs()
+
+    team_stats = (
+        combined.groupby('team')
+        .agg(
+            matches    = ('err_sc', 'count'),
+            sc_actual  = ('sc_actual', 'mean'),
+            sc_pred    = ('sc_pred',   'mean'),
+            mae_sc     = ('err_sc',    'mean'),
+            co_actual  = ('co_actual', 'mean'),
+            co_pred    = ('co_pred',   'mean'),
+            mae_co     = ('err_co',    'mean'),
+        )
+        .reset_index()
+    )
+    team_stats['mae_overall'] = (team_stats['mae_sc'] + team_stats['mae_co']) / 2
+    return team_stats.sort_values('mae_overall').reset_index(drop=True)
+
+
+def print_team_table(team_stats):
+    w = 62
+    print(f"\n{'─'*w}")
+    print("  PER TEAM  (sorted by overall MAE, best → worst)")
+    print(f"{'─'*w}")
+    hdr = (f"  {'Team':<26} {'M':>3}  "
+           f"{'Sc-Act':>6}  {'Sc-Pred':>7}  {'MAE-Sc':>6}  "
+           f"{'Co-Act':>6}  {'Co-Pred':>7}  {'MAE-Co':>6}  "
+           f"{'MAE-Ov':>6}")
+    print(hdr)
+    print(f"  {'─'*len(hdr.strip())}")
+    for _, row in team_stats.iterrows():
+        print(
+            f"  {row['team']:<26} {int(row['matches']):>3}  "
+            f"{row['sc_actual']:>6.2f}  {row['sc_pred']:>7.2f}  {row['mae_sc']:>6.3f}  "
+            f"{row['co_actual']:>6.2f}  {row['co_pred']:>7.2f}  {row['mae_co']:>6.3f}  "
+            f"{row['mae_overall']:>6.3f}"
+        )
+    print(f"{'─'*w}")
+
+
+def print_summary(records):
+    """Overall accuracy from match-level data (not average of GW averages)."""
+    rows = [m for r in records for m in r['match_rows']]
+    df   = pd.DataFrame(rows)
+
+    home_err = (df['home_predicted'] - df['home_actual']).abs()
+    away_err = (df['away_predicted'] - df['away_actual']).abs()
+    all_err  = pd.concat([home_err, away_err])
+
+    w = 62
+    print(f"\n{'─'*w}")
+    print(f"  OVERALL  —  {len(records)} gameweeks  ·  {len(df)} matches  ·  {len(all_err)} predictions")
+    print(f"{'─'*w}")
+    tot_err = ((df['home_predicted'] + df['away_predicted']) - (df['home_actual'] + df['away_actual'])).abs()
+
+    print(f"  {'MAE (all predictions)':<26} {all_err.mean():.4f}")
+    print(f"  {'MAE home':<26} {home_err.mean():.4f}")
+    print(f"  {'MAE away':<26} {away_err.mean():.4f}")
+    print(f"  {'MAE total goals (per game)':<26} {tot_err.mean():.4f}")
+    print(f"  {'Home goals':<22} actual {df['home_actual'].mean():.2f}   pred {df['home_predicted'].mean():.2f}")
+    print(f"  {'Away goals':<22} actual {df['away_actual'].mean():.2f}   pred {df['away_predicted'].mean():.2f}")
+    tot_act  = (df['home_actual']    + df['away_actual']).mean()
+    tot_pred = (df['home_predicted'] + df['away_predicted']).mean()
+    print(f"  {'Total / game':<22} actual {tot_act:.2f}   pred {tot_pred:.2f}")
+    print(f"{'─'*w}")
+
+
+def print_weekly_table(records):
+    """One row per gameweek."""
+    hdr = (f"  {'GW':>3}  {'Start':>10}  {'End':>10}  "
+           f"{'n':>3}  {'MAE':>6}  "
+           f"{'H-act':>5}  {'H-pred':>6}  "
+           f"{'A-act':>5}  {'A-pred':>6}  "
+           f"{'Tot-act':>7}  {'Tot-pred':>8}")
+    w = 62
+    print(f"\n{'─'*w}")
+    print("  PER GAMEWEEK")
+    print(f"{'─'*w}")
+    print(hdr)
+    print(f"  {'─'*len(hdr.strip())}")
+    for r in records:
+        mdf = pd.DataFrame(r['match_rows'])
+        print(
+            f"  {r['gw']:>3}  {str(r['gw_start']):>10}  {str(r['gw_end']):>10}  "
+            f"{r['matches']:>3}  {r['mae']:>6.3f}  "
+            f"{mdf['home_actual'].mean():>5.2f}  {mdf['home_predicted'].mean():>6.2f}  "
+            f"{mdf['away_actual'].mean():>5.2f}  {mdf['away_predicted'].mean():>6.2f}  "
+            f"{(mdf['home_actual']+mdf['away_actual']).mean():>7.2f}  "
+            f"{(mdf['home_predicted']+mdf['away_predicted']).mean():>8.2f}"
+        )
+    print(f"{'─'*w}")
 
 
 def load_actual_full_scores(db_path, league, season):
@@ -215,14 +328,22 @@ def main():
         print("No results — check EVAL_START/EVAL_END against available data.")
         return
 
-    results = pd.DataFrame(records)
-    print_summary("Model", results)
+    results    = pd.DataFrame(records)
+    team_stats = build_team_breakdown(records)
 
-    # Save CSV
-    out = os.path.join(os.path.dirname(__file__), 'outputs', 'weekly_accuracy_results.csv')
-    results.drop(columns=['errors']).to_csv(out, index=False)
-    print(f"\nSaved: {out}")
-    print(results[['gw', 'gw_start', 'gw_end', 'matches', 'mae']].to_string(index=False))
+    print_summary(records)
+    print_weekly_table(records)
+    print_team_table(team_stats)
+
+    # Save CSVs
+    out_dir = os.path.join(os.path.dirname(__file__), 'outputs')
+    weekly_out = os.path.join(out_dir, 'weekly_accuracy_results.csv')
+    results.drop(columns=['errors', 'match_rows']).to_csv(weekly_out, index=False)
+    print(f"\nSaved: {weekly_out}")
+
+    team_out = os.path.join(out_dir, 'team_accuracy_results.csv')
+    team_stats.to_csv(team_out, index=False)
+    print(f"Saved: {team_out}")
 
 
 if __name__ == '__main__':
