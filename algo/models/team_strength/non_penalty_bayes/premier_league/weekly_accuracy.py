@@ -302,6 +302,122 @@ def load_gw_windows(db_path, league, season, eval_start, eval_end):
     return gw_df
 
 
+def save_to_db(db_path, league, season, records, team_stats):
+    """
+    Write prediction results to fotmob.db.
+
+    Tables created (if missing):
+      pl_match_predictions  — one row per match
+      pl_gw_accuracy        — one row per gameweek summary
+
+    Existing rows for this league+season are deleted before inserting so
+    re-running the script always gives a clean, up-to-date snapshot.
+    """
+    from datetime import datetime
+    run_ts = datetime.utcnow().isoformat(timespec='seconds')
+
+    conn = sqlite3.connect(db_path)
+    cur  = conn.cursor()
+
+    # ── match-level predictions ───────────────────────────────────────────────
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS pl_match_predictions (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            run_timestamp   TEXT,
+            league          TEXT,
+            season          TEXT,
+            gw              INTEGER,
+            gw_start        TEXT,
+            gw_end          TEXT,
+            home_team       TEXT,
+            away_team       TEXT,
+            home_predicted  REAL,
+            away_predicted  REAL,
+            home_actual     REAL,
+            away_actual     REAL,
+            home_error      REAL,
+            away_error      REAL
+        )
+    """)
+    cur.execute(
+        "DELETE FROM pl_match_predictions WHERE league = ? AND season = ?",
+        (league, season),
+    )
+    match_rows_db = []
+    for r in records:
+        for m in r['match_rows']:
+            match_rows_db.append((
+                run_ts, league, season,
+                r['gw'], str(r['gw_start']), str(r['gw_end']),
+                m['home_team'],      m['away_team'],
+                m['home_predicted'], m['away_predicted'],
+                m['home_actual'],    m['away_actual'],
+                abs(m['home_predicted'] - m['home_actual']),
+                abs(m['away_predicted'] - m['away_actual']),
+            ))
+    cur.executemany("""
+        INSERT INTO pl_match_predictions
+            (run_timestamp, league, season, gw, gw_start, gw_end,
+             home_team, away_team,
+             home_predicted, away_predicted,
+             home_actual, away_actual,
+             home_error, away_error)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    """, match_rows_db)
+
+    # ── gameweek summary ──────────────────────────────────────────────────────
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS pl_gw_accuracy (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            run_timestamp    TEXT,
+            league           TEXT,
+            season           TEXT,
+            gw               INTEGER,
+            gw_start         TEXT,
+            gw_end           TEXT,
+            matches          INTEGER,
+            mae              REAL,
+            home_actual      REAL,
+            away_actual      REAL,
+            total_actual     REAL,
+            home_predicted   REAL,
+            away_predicted   REAL,
+            total_predicted  REAL
+        )
+    """)
+    cur.execute(
+        "DELETE FROM pl_gw_accuracy WHERE league = ? AND season = ?",
+        (league, season),
+    )
+    gw_rows_db = [
+        (
+            run_ts, league, season,
+            r['gw'], str(r['gw_start']), str(r['gw_end']),
+            r['matches'], r['mae'],
+            r['home_actual'], r['away_actual'], r['total_actual'],
+            r['home_predicted'], r['away_predicted'], r['total_predicted'],
+        )
+        for r in records
+    ]
+    cur.executemany("""
+        INSERT INTO pl_gw_accuracy
+            (run_timestamp, league, season, gw, gw_start, gw_end,
+             matches, mae,
+             home_actual, away_actual, total_actual,
+             home_predicted, away_predicted, total_predicted)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    """, gw_rows_db)
+
+    conn.commit()
+    conn.close()
+
+    n_matches = len(match_rows_db)
+    n_gws     = len(gw_rows_db)
+    print(f"\nSaved to DB ({db_path}):")
+    print(f"  pl_match_predictions  → {n_matches} rows")
+    print(f"  pl_gw_accuracy        → {n_gws} rows")
+
+
 def main():
     actual_df = load_actual_full_scores(DB_PATH, LEAGUE, SEASON)
     print(f"Loaded {len(actual_df)} full-score matches from matches table.")
@@ -335,11 +451,14 @@ def main():
     print_weekly_table(records)
     print_team_table(team_stats)
 
-    # Save CSVs
+    # ── Write to DB ───────────────────────────────────────────────────────────
+    save_to_db(DB_PATH, LEAGUE, SEASON, records, team_stats)
+
+    # ── Save CSVs (kept for backwards compat) ─────────────────────────────────
     out_dir = os.path.join(os.path.dirname(__file__), 'outputs')
     weekly_out = os.path.join(out_dir, 'weekly_accuracy_results.csv')
     results.drop(columns=['errors', 'match_rows']).to_csv(weekly_out, index=False)
-    print(f"\nSaved: {weekly_out}")
+    print(f"Saved: {weekly_out}")
 
     team_out = os.path.join(out_dir, 'team_accuracy_results.csv')
     team_stats.to_csv(team_out, index=False)
