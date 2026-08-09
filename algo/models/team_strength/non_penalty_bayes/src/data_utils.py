@@ -382,7 +382,7 @@ def create_weighted_scoreline_data(
     epv_df: pd.DataFrame,
     all_shots_df: pd.DataFrame,
     max_goals: int = 9,
-    min_prob_threshold: float = 0.001,
+    min_prob_threshold: float = 0.000,
     decay_rate: float = 0.001,
     # Base signal weights
     goals_weight: float = 0.25,
