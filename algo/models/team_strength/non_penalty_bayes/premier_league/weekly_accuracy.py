@@ -70,9 +70,9 @@ def predict_gw(df, actual_df, gw, gw_start, gw_end):
     if len(test_df) == 0 or len(train_df) == 0:
         return None
 
-    # Look up full actual scores (incl. penalties) from matches table
+    # Look up full actual scores (incl. penalties) and xG from matches table
     test_df = test_df.merge(
-        actual_df[['match_id', 'home_goals', 'away_goals']],
+        actual_df[['match_id', 'home_goals', 'away_goals', 'home_xg', 'away_xg']],
         on='match_id', suffixes=('_np', ''),
     )
 
@@ -113,9 +113,11 @@ def predict_gw(df, actual_df, gw, gw_start, gw_end):
         axis=0,
     ) + BASELINE_AWAY_PENS
 
-    # Full actual scores including penalties
-    ah = test_df['home_goals'].values
-    aa = test_df['away_goals'].values
+    # Full actual scores including penalties, and xG
+    ah   = test_df['home_goals'].values
+    aa   = test_df['away_goals'].values
+    hxg  = test_df['home_xg'].values
+    axg  = test_df['away_xg'].values
 
     errors = np.abs(
         np.concatenate([home_mu, away_mu]) -
@@ -131,6 +133,8 @@ def predict_gw(df, actual_df, gw, gw_start, gw_end):
             'away_predicted': float(away_mu[i]),
             'home_actual':    float(ah[i]),
             'away_actual':    float(aa[i]),
+            'home_xg':        float(hxg[i]) if not np.isnan(hxg[i]) else None,
+            'away_xg':        float(axg[i]) if not np.isnan(axg[i]) else None,
         }
         for i in range(len(test_df))
     ]
@@ -268,15 +272,18 @@ def print_weekly_table(records):
 
 
 def load_actual_full_scores(db_path, league, season):
-    """Load full scorelines (incl. penalties) from the matches table."""
+    """Load full scorelines (incl. penalties) and xG from the matches table."""
     conn = sqlite3.connect(db_path)
     df = pd.read_sql_query("""
         SELECT
-            match_id,
-            home_goals,
-            away_goals
-        FROM matches
-        WHERE league_id = ? AND season = ?
+            m.match_id,
+            m.home_goals,
+            m.away_goals,
+            CAST(ms.home_expected_goals AS REAL) AS home_xg,
+            CAST(ms.away_expected_goals AS REAL) AS away_xg
+        FROM matches m
+        LEFT JOIN match_stats ms ON ms.match_id = m.match_id
+        WHERE m.league_id = ? AND m.season = ?
     """, conn, params=[league, season])
     conn.close()
     return df
@@ -336,7 +343,11 @@ def save_to_db(db_path, league, season, records, team_stats):
             home_actual     REAL,
             away_actual     REAL,
             home_error      REAL,
-            away_error      REAL
+            away_error      REAL,
+            home_xg         REAL,
+            away_xg         REAL,
+            home_xg_error   REAL,
+            away_xg_error   REAL
         )
     """)
     cur.execute(
@@ -346,6 +357,8 @@ def save_to_db(db_path, league, season, records, team_stats):
     match_rows_db = []
     for r in records:
         for m in r['match_rows']:
+            hxg = m.get('home_xg')
+            axg = m.get('away_xg')
             match_rows_db.append((
                 run_ts, league, season,
                 r['gw'], str(r['gw_start']), str(r['gw_end']),
@@ -354,6 +367,9 @@ def save_to_db(db_path, league, season, records, team_stats):
                 m['home_actual'],    m['away_actual'],
                 abs(m['home_predicted'] - m['home_actual']),
                 abs(m['away_predicted'] - m['away_actual']),
+                hxg, axg,
+                abs(m['home_predicted'] - hxg) if hxg is not None else None,
+                abs(m['away_predicted'] - axg) if axg is not None else None,
             ))
     cur.executemany("""
         INSERT INTO pl_match_predictions
@@ -361,8 +377,10 @@ def save_to_db(db_path, league, season, records, team_stats):
              home_team, away_team,
              home_predicted, away_predicted,
              home_actual, away_actual,
-             home_error, away_error)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+             home_error, away_error,
+             home_xg, away_xg,
+             home_xg_error, away_xg_error)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     """, match_rows_db)
 
     # ── gameweek summary ──────────────────────────────────────────────────────
