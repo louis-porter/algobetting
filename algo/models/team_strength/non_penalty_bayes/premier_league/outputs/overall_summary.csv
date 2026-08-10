@@ -1,0 +1,16 @@
+Metric,Value
+MAE — predicted vs goals (skill + luck),0.8788
+MAE — predicted vs xG (skill only),0.5695
+Irreducible noise  |goals − xG|,0.7899
+MAE gap explained by noise,35%
+,
+Home bias vs goals  (pred − actual),-0.0467
+Away bias vs goals  (pred − actual),0.0319
+Home bias vs xG     (pred − xG),-0.068
+Away bias vs xG     (pred − xG),0.0108
+,
+Std dev — predicted total / game,0.274
+Std dev — actual goals total / game,1.5638
+Std dev — actual xG total / game,1.0082
+Compression ratio  (goals σ / pred σ),5.71
+Compression ratio  (xG σ / pred σ),3.68

@@ -1,0 +1,4 @@
+Side,Actual goals std,Actual xG std,Predicted std,Compression vs goals,Compression vs xG
+Home,1.164,0.7976,0.3564,3.27,2.24
+Away,1.0613,0.7308,0.3014,3.52,2.42
+Total,1.5638,1.0082,0.274,5.71,3.68
