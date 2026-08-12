@@ -1,0 +1,7 @@
+Metric,Value
+MAE — predicted vs goals (skill + luck),0.8788
+MAE — predicted vs xG (skill only),0.5695
+Home bias vs goals  (pred − actual),-0.0467
+Away bias vs goals  (pred − actual),0.0319
+Home bias vs xG     (pred − xG),-0.068
+Away bias vs xG     (pred − xG),0.0108
