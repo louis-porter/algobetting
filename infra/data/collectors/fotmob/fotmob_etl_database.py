@@ -304,29 +304,30 @@ def save_to_database(shots_df, red_cards_df, matches_df, match_stats_df, season,
             table_exists = cursor.fetchone() is not None
             
             if table_exists:
-                # Read existing data
-                existing_df = pd.read_sql(f"SELECT * FROM {table_name}", conn)
-                
                 # If key_columns specified, use those for duplicate checking
                 # Otherwise use all columns
                 if key_columns:
                     check_columns = key_columns
                 else:
                     check_columns = df.columns.tolist()
-                
+
+                # Only pull the key columns (not SELECT *) - much cheaper as tables grow.
+                cols_sql = ", ".join(f'"{c}"' for c in check_columns)
+                existing_check = pd.read_sql(f"SELECT DISTINCT {cols_sql} FROM {table_name}", conn)
+
                 # Round numeric columns to avoid floating point precision issues
                 df_check = df.copy()
-                existing_check = existing_df.copy()
-                
+
                 for col in check_columns:
                     if col in df_check.columns and pd.api.types.is_numeric_dtype(df_check[col]):
                         df_check[col] = df_check[col].round(6)
                     if col in existing_check.columns and pd.api.types.is_numeric_dtype(existing_check[col]):
                         existing_check[col] = existing_check[col].round(6)
-                
-                # Create composite keys for comparison
-                existing_keys = set(existing_check[check_columns].apply(lambda row: tuple(row), axis=1))
-                new_rows_mask = ~df_check[check_columns].apply(lambda row: tuple(row) in existing_keys, axis=1)
+
+                # Vectorized anti-join (was an O(n) Python .apply(tuple) per row, which got
+                # slower every season as the table grew).
+                merged = df_check.merge(existing_check.drop_duplicates(), on=check_columns, how="left", indicator=True)
+                new_rows_mask = (merged["_merge"] == "left_only").values
                 new_df = df[new_rows_mask]
                 
                 rows_before = len(df)

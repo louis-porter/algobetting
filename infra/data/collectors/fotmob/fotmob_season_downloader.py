@@ -1,16 +1,18 @@
 """
 FotMob season downloader.
 
-Finds missing match IDs automatically, opens all URLs in your real browser
-at once, then walks you through saving each one from clipboard.
+Finds missing match IDs via the fixtures endpoint and fetches matchDetails
+for each directly over HTTP - no manual copy/paste, no browser needed.
+(The old workflow assumed matchDetails was Cloudflare-gated; as of writing,
+plain requests with a browser User-Agent goes straight through on both the
+fixtures and matchDetails endpoints.)
 """
 
 import json
-import subprocess
-import webbrowser
+import time
 from pathlib import Path
 
-from playwright.sync_api import sync_playwright
+import requests
 
 LEAGUES = [
     {"id": 47, "name": "Premier_League", "season_type": "winter"},
@@ -22,65 +24,50 @@ LEAGUES = [
     #{"id": 126, "name": "League_of_Ireland", "season_type": "summer"},
 ]
 
-FIREFOX_PROFILE = str(Path.home() / "Library/Application Support/Firefox/Profiles/zx2gcfse.default-release")
+HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    )
+}
 BASE_URL = "https://www.fotmob.com/api/data"
+REQUEST_DELAY = 1.5
+MAX_RETRIES = 3
 
 
-def _get_missing_ids(league, season_str, existing):
-    """Use Playwright Firefox with real profile to fetch the fixtures list."""
-    from selenium import webdriver
-    from selenium.webdriver.firefox.options import Options
-
-    options = Options()
-    options.add_argument("-profile")
-    options.add_argument(FIREFOX_PROFILE)
-    options.add_argument("--headless")
-
-    driver = webdriver.Firefox(options=options)
-    try:
-        driver.set_script_timeout(15)
-        driver.get("https://www.fotmob.com")
-
-        result = driver.execute_async_script(f"""
-            const callback = arguments[arguments.length - 1];
-            fetch('/api/data/fixtures?id={league["id"]}&season={season_str}')
-                .then(r => r.json())
-                .then(data => callback({{ok: true, data: data}}))
-                .catch(err => callback({{ok: false, error: err.toString()}}));
-        """)
-
-        if not result or not result.get("ok"):
-            raise Exception(result.get("error") if result else "No response")
-
-        fixtures = result["data"]
-        match_ids = [
-            str(x["id"]) for x in fixtures
-            if not x["status"]["cancelled"] and x["status"]["finished"]
-        ]
-        return match_ids, [m for m in match_ids if m not in existing]
-    finally:
-        driver.quit()
+def _get_finished_match_ids(league, season_str):
+    resp = requests.get(
+        f"{BASE_URL}/fixtures",
+        params={"id": league["id"], "season": season_str},
+        headers=HEADERS,
+        timeout=20,
+    )
+    resp.raise_for_status()
+    fixtures = resp.json()
+    return [
+        str(f["id"])
+        for f in fixtures
+        if f["status"]["finished"] and not f["status"]["cancelled"]
+    ]
 
 
-def _save_from_clipboard(match_id, json_dir):
-    """Read JSON from clipboard and save to file."""
-    raw = subprocess.run(["pbpaste"], capture_output=True, text=True).stdout.strip()
-    if not raw:
-        print(f"    [{match_id}] Clipboard empty, skipping.")
-        return False
-    try:
-        data = json.loads(raw)
-        if "error" in data:
-            print(f"    [{match_id}] Got error response: {data}, skipping.")
-            return False
-        out_path = json_dir / f"{match_id}.json"
-        with open(out_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False)
-        print(f"    [{match_id}] Saved.")
-        return True
-    except json.JSONDecodeError as e:
-        print(f"    [{match_id}] Invalid JSON: {e}")
-        return False
+def _fetch_match_details(match_id, session):
+    for attempt in range(1, MAX_RETRIES + 1):
+        resp = session.get(f"{BASE_URL}/matchDetails", params={"matchId": match_id}, timeout=20)
+        try:
+            data = resp.json()
+        except ValueError:
+            data = None
+
+        if resp.status_code == 200 and data and "general" in data:
+            return data
+
+        if attempt < MAX_RETRIES:
+            wait_s = 5 * attempt
+            print(f"    [{match_id}] attempt {attempt} failed (status {resp.status_code}), retrying in {wait_s}s...")
+            time.sleep(wait_s)
+
+    return None
 
 
 def store_season(league, season_start):
@@ -95,30 +82,37 @@ def store_season(league, season_start):
 
     print(f"{league['name']} {season_str}")
     print(f"    {len(existing)} matches already stored")
-    print(f"    Fetching fixtures list...")
+    print("    Fetching fixtures list...")
 
-    match_ids, to_get = _get_missing_ids(league, season_str, existing)
+    match_ids = _get_finished_match_ids(league, season_str)
+    to_get = [m for m in match_ids if m not in existing]
 
     print(f"    {len(match_ids)} valid matches")
     if not to_get:
         print("    Nothing new to fetch.\n")
         return
 
-    print(f"\n    {len(to_get)} missing match{'es' if len(to_get) > 1 else ''}.")
-    print("    Opening all URLs in your browser now...")
-
+    print(f"    {len(to_get)} missing match{'es' if len(to_get) > 1 else ''}. Fetching...")
     json_dir.mkdir(parents=True, exist_ok=True)
-    urls = [f"{BASE_URL}/matchDetails?matchId={m}" for m in to_get]
-    for url in urls:
-        webbrowser.open(url)
 
-    print(f"\n    For each tab: Cmd+A, Cmd+C, then press Enter here.")
-    print("    (If Cloudflare blocks a tab, skip it with just Enter.)\n")
+    session = requests.Session()
+    session.headers.update(HEADERS)
 
-    for match_id in to_get:
-        input(f"    [{match_id}] Ready (Cmd+A, Cmd+C done)? Press Enter... ")
-        _save_from_clipboard(match_id, json_dir)
+    failures = []
+    for i, match_id in enumerate(to_get, 1):
+        data = _fetch_match_details(match_id, session)
+        if data is None:
+            print(f"    [{i}/{len(to_get)}] {match_id} FAILED, skipping.")
+            failures.append(match_id)
+        else:
+            out_path = json_dir / f"{match_id}.json"
+            with open(out_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False)
+            print(f"    [{i}/{len(to_get)}] {match_id} saved.")
+        time.sleep(REQUEST_DELAY)
 
+    if failures:
+        print(f"\n    {len(failures)} failures: {failures}")
     print("\nDone\n")
 
 
