@@ -1,5 +1,5 @@
 """
-Rebases transfermarkt_squad_values.csv market-value figures into constant
+Rebases transfermarkt_squad_values market-value figures into constant
 (2025-26 season) terms, using the same UK CPI series (ONS D7BT) and season-
 averaging convention as adjust_salaries_for_inflation.py.
 
@@ -9,23 +9,25 @@ or the values converted to GBP first -- this applies UK CPI directly instead,
 since the two indices have tracked closely enough over 2015-2026 that it
 doesn't change the shape of the trend, only its last-decimal precision.
 
-Input:  transfermarkt_squad_values.csv
+Input:  transfermarkt_squad_values table in infra/data/db/priors.db
 Output: transfermarkt_squad_values_adjusted.csv (adds cpi_index, deflator,
         squad_value_2025_26_terms)
 """
 
+import sqlite3
 from pathlib import Path
 
 import pandas as pd
 
-from adjust_salaries_for_inflation import TARGET_SEASON, season_avg_cpi
+from adjust_salaries_for_inflation import DB_PATH, TARGET_SEASON, season_avg_cpi
 
-DATA_PATH = Path(__file__).parent / "transfermarkt_squad_values.csv"
 OUT_PATH = Path(__file__).parent / "transfermarkt_squad_values_adjusted.csv"
 
 
 if __name__ == "__main__":
-    df = pd.read_csv(DATA_PATH)
+    conn = sqlite3.connect(DB_PATH)
+    df = pd.read_sql("SELECT * FROM transfermarkt_squad_values", conn)
+    conn.close()
 
     seasons = sorted(df["season"].unique())
     cpi_by_season = {s: season_avg_cpi(s) for s in seasons}

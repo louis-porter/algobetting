@@ -2,9 +2,11 @@
 Downloads historical match results (final scores only, no odds/shots) for the
 Premier League (E0) and Championship (E1) from football-data.co.uk, going back
 to 1993-94. Used to build the Championship -> PL goal-rate translation used for
-cold-start priors on newly promoted teams.
+cold-start priors on newly promoted teams. Goes back further than fotmob.db
+(which only covers 2020-21 onward), so this is the source for the long-run
+promotion/wage regressions in algo/models/.../premier_league/priors/.
 
-Output: raw_results.csv with columns
+Output: raw_results table in infra/data/db/priors.db, columns
     division, season, home_team, away_team, home_goals, away_goals
 where season is formatted "YYYY-YYYY" (e.g. "2023-2024").
 
@@ -13,13 +15,14 @@ Usage
     python fetch_historical_results.py
 """
 
+import sqlite3
 import time
 from pathlib import Path
 
 import pandas as pd
 import requests
 
-OUT_PATH = Path(__file__).parent / "raw_results.csv"
+DB_PATH = Path("infra/data/db/priors.db")
 BASE_URL = "https://www.football-data.co.uk/mmz4281/{code}/{div}.csv"
 DIVISIONS = {"E0": "Premier_League", "E1": "Championship"}
 FIRST_SEASON_START = 1993   # 1993-94 is football-data's earliest coverage
@@ -72,5 +75,7 @@ def fetch_all() -> pd.DataFrame:
 
 if __name__ == "__main__":
     all_results = fetch_all()
-    all_results.to_csv(OUT_PATH, index=False)
-    print(f"\nSaved {len(all_results)} matches -> {OUT_PATH}")
+    conn = sqlite3.connect(DB_PATH)
+    all_results.to_sql("raw_results", conn, if_exists="replace", index=False)
+    conn.close()
+    print(f"\nSaved {len(all_results)} matches -> {DB_PATH}::raw_results")

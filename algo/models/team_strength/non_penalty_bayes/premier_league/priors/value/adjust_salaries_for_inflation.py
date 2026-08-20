@@ -13,15 +13,17 @@ CPI on TV-deal growth) -- this column answers "what would this wage bill be
 worth in today's money", not "was this team relatively big-spending for its
 season" (for that, use gross_unadjusted / season mean instead).
 
-Input:  prem_salaries.csv
+Input:  prem_salaries_raw table in infra/data/db/priors.db (manually compiled,
+        no scraper -- there's no automated source for wage-bill data)
 Output: prem_salaries_adjusted.csv (adds cpi_index, deflator, gross_2025_26_terms)
 """
 
+import sqlite3
 from pathlib import Path
 
 import pandas as pd
 
-DATA_PATH = Path(__file__).parent / "prem_salaries_raw.csv"
+DB_PATH = Path(__file__).resolve().parents[7] / "infra" / "data" / "db" / "priors.db"
 OUT_PATH = Path(__file__).parent / "prem_salaries_adjusted.csv"
 
 # ONS series D7BT, CPI INDEX 00: ALL ITEMS (2015=100), monthly.
@@ -70,7 +72,9 @@ def season_avg_cpi(season: str) -> float:
 
 
 if __name__ == "__main__":
-    df = pd.read_csv(DATA_PATH)
+    conn = sqlite3.connect(DB_PATH)
+    df = pd.read_sql("SELECT * FROM prem_salaries_raw", conn)
+    conn.close()
 
     seasons = sorted(df["season"].unique())
     cpi_by_season = {s: season_avg_cpi(s) for s in seasons}
