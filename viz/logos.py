@@ -50,4 +50,7 @@ TEAM_LOGOS = {
     "Wolves":           "https://resources.premierleague.com/premierleague/badges/t39@x2.png",
     "Leeds":            "https://resources.premierleague.com/premierleague/badges/t2@x2.png",
     "Burnley":          "https://resources.premierleague.com/premierleague/badges/t90@x2.png",
+    "Ipswich":          "https://resources.premierleague.com/premierleague/badges/t40@x2.png",
+    "Hull":             "https://upload.wikimedia.org/wikipedia/en/thumb/5/54/Hull_City_A.F.C._logo.svg/250px-Hull_City_A.F.C._logo.svg.png",
+    "Coventry":         "https://upload.wikimedia.org/wikipedia/en/thumb/7/7b/Coventry_City_FC_crest.svg/250px-Coventry_City_FC_crest.svg.png",
 }

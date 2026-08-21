@@ -157,11 +157,14 @@ def _parse_value(text: str) -> float | None:
 
 
 def fetch_squad(team_id: int, season_start: int) -> list[dict] | None:
-    """One dict per valued player: {player, age, value_eur}. Column order on
-    TM's squad table (#, Player, Age, Nat., Current club, Market value) is
-    stable across seasons (checked 2015/2020/2025) -- age is always the 2nd
-    'zentriert'-classed cell (1st is the squad-number column, which also
-    carries the zentriert class)."""
+    """One dict per valued player: {player, age, position, value_eur}. Column
+    order on TM's squad table (#, Player, Age, Nat., Current club, Market
+    value) is stable across seasons (checked 2015/2020/2025) -- age is always
+    the 2nd 'zentriert'-classed cell (1st is the squad-number column, which
+    also carries the zentriert class). Position sits in the same 'posrela'
+    cell as the player name: a nested two-row table, name in row 1, position
+    text (e.g. "Goalkeeper", "Centre-Back") in row 2 -- also checked stable
+    across 2015/2020/2025."""
     url = f"https://www.transfermarkt.com/club/kader/verein/{team_id}/plus/0?saison_id={season_start}"
     html = _get(url)
     if html is None:
@@ -179,12 +182,14 @@ def fetch_squad(team_id: int, season_start: int) -> list[dict] | None:
         if value is None:
             continue
         posrela = row.find("td", class_="posrela")
-        hauptlink_td = posrela.find("td", class_="hauptlink") if posrela else None
+        posrela_rows = posrela.find_all("tr") if posrela else []
+        hauptlink_td = posrela_rows[0].find("td", class_="hauptlink") if posrela_rows else None
         name = hauptlink_td.get_text(strip=True) if hauptlink_td else None
+        position = posrela_rows[1].find("td").get_text(strip=True) if len(posrela_rows) > 1 else None
         zentriert_cells = row.find_all("td", class_="zentriert")
         age_text = zentriert_cells[1].get_text(strip=True) if len(zentriert_cells) > 1 else ""
         age = int(age_text) if age_text.isdigit() else None
-        players.append({"player": name, "age": age, "value_eur": value})
+        players.append({"player": name, "age": age, "position": position, "value_eur": value})
     return players
 
 
@@ -239,7 +244,7 @@ def build_team_season_list(priors_conn: sqlite3.Connection) -> pd.DataFrame:
 
 
 def _existing_players(conn: sqlite3.Connection) -> pd.DataFrame:
-    cols = ["team", "season", "player", "age", "value_eur"]
+    cols = ["team", "season", "player", "age", "position", "value_eur"]
     try:
         return pd.read_sql("SELECT * FROM transfermarkt_player_values", conn)
     except pd.errors.DatabaseError:
@@ -293,7 +298,7 @@ if __name__ == "__main__":
         print(f"  [{team} {season}] EUR {total/1e6:.1f}m ({len(players)} valued players)")
         df = pd.DataFrame(players)
         df["team"], df["season"] = team, season
-        player_rows.append(df[["team", "season", "player", "age", "value_eur"]])
+        player_rows.append(df[["team", "season", "player", "age", "position", "value_eur"]])
         _write(conn, player_rows)
         time.sleep(SLEEP)
 
