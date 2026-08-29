@@ -1,0 +1,29 @@
+﻿Sleep Score 4 Weeks,Score,Resting Heart Rate,Body Battery,Pulse Ox,Respiration,Skin Temp Change,HRV Status,Quality,Duration,Sleep Need,Bedtime,Wake Time,Sleep Alignment
+2026-03-07,82,48,50,--,12.42,'+0.2°,37,Good,6h 36min,7h 10min,9:01 PM,3:37 AM,Aligned
+2026-03-06,80,52,48,--,13.44,0°,37,Good,7h 26min,8h 20min,8:42 PM,4:20 AM,Aligned
+2026-03-05,72,51,43,--,13.7,'-0.8°,36,Fair,6h 9min,8h 0min,10:54 PM,5:07 AM,Use for 3w
+2026-03-04,79,52,41,--,12.23,'+0.1°,35,Fair,6h 58min,8h 0min,9:02 PM,4:06 AM,Use for 3w
+2026-03-03,85,53,48,--,12.39,'+0.1°,33,Good,7h 20min,8h 0min,8:53 PM,4:19 AM,Use for 3w
+2026-03-02,81,53,47,--,13.49,0°,33,Good,7h 44min,8h 0min,8:57 PM,4:57 AM,Use for 3w
+2026-03-01,74,54,39,--,13.96,0°,34,Fair,6h 34min,8h 0min,9:30 PM,4:48 AM,Use for 3w
+2026-02-28,79,55,42,--,13.29,'-0.2°,31,Fair,7h 22min,7h 40min,9:18 PM,4:52 AM,Use for 3w
+2026-02-27,86,53,52,--,13.9,'+0.2°,31,Good,7h 49min,8h 50min,9:03 PM,4:53 AM,Use for 3w
+2026-02-26,75,54,44,--,15.07,'+0.2°,29,Fair,7h 27min,9h 0min,9:09 PM,4:58 AM,Use for 3w
+2026-02-25,48,55,24,--,16.31,'+0.2°,30,Poor,6h 19min,8h 0min,9:30 PM,4:33 AM,Use for 3w
+2026-02-24,86,48,64,--,11.88,'-0.1°,31,Good,7h 46min,8h 0min,8:58 PM,5:09 AM,Use for 3w
+2026-02-23,89,53,68,--,11.62,'+0.3°,30,Good,7h 52min,9h 0min,9:06 PM,5:00 AM,Use for 3w
+2026-02-22,43,53,21,--,18.77,'+0.6°,29,Poor,6h 19min,7h 40min,12:26 AM,7:30 AM,Use for 3w
+2026-02-21,81,51,57,--,12.67,'+0.5°,32,Good,7h 4min,7h 20min,9:06 PM,4:22 AM,Use for 3w
+2026-02-20,69,54,30,--,16.57,'+0.4°,33,Fair,7h 8min,8h 0min,10:06 PM,5:32 AM,Use for 3w
+2026-02-19,84,49,51,--,13.28,'+0.3°,37,Good,7h 9min,8h 30min,11:11 PM,6:25 AM,Use for 3w
+2026-02-18,73,49,47,--,12.92,'+0.1°,39,Fair,6h 21min,7h 30min,11:36 PM,6:00 AM,Use for 3w
+2026-02-17,82,53,46,--,12.91,'+0.2°,41,Good,7h 28min,8h 20min,9:08 PM,4:44 AM,Use for 3w
+2026-02-16,72,53,39,--,12.84,'+0.2°,42,Fair,7h 9min,8h 20min,8:59 PM,4:51 AM,Use for 3w
+2026-02-15,59,54,37,--,13.29,'+0.2°,43,Poor,6h 11min,8h 0min,8:46 PM,3:52 AM,Use for 3w
+2026-02-14,77,49,46,--,11.41,'+0.2°,42,Fair,6h 24min,8h 0min,9:58 PM,4:28 AM,--
+2026-02-13,80,46,58,--,11.02,'-1°,41,Good,6h 26min,8h 0min,11:12 PM,5:40 AM,--
+2026-02-12,72,47,47,--,11.61,'-0.4°,39,Fair,6h 3min,8h 0min,9:52 PM,5:09 AM,--
+2026-02-11,90,48,57,--,11.8,'+0.2°,38,Excellent,7h 41min,8h 0min,9:15 PM,5:00 AM,--
+2026-02-10,87,48,53,--,11.87,'-0.3°,38,Good,7h 17min,8h 0min,9:11 PM,5:00 AM,--
+2026-02-09,80,51,43,--,13.77,'-0.1°,38,Good,7h 36min,7h 40min,9:14 PM,5:08 AM,--
+2026-02-08,75,52,42,--,13.17,'-0.4°,38,Fair,7h 5min,7h 40min,9:12 PM,4:55 AM,--

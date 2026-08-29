@@ -5,3 +5,4 @@ infra/data/db/fotmob.sqbpro
 infra/data/collectors/whoscored/events_202526.csv
 infra/data/db/fotmob.db
 *.json
+analysis/marathon_overtraining/public_marathon_results/

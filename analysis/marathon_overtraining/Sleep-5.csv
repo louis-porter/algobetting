@@ -1,0 +1,29 @@
+﻿Sleep Score 4 Weeks,Score,Resting Heart Rate,Body Battery,Pulse Ox,Respiration,Skin Temp Change,HRV Status,Quality,Duration,Sleep Need,Bedtime,Wake Time,Sleep Alignment
+2026-05-30,84,52,48,--,13.29,'-0.8°,37,Good,7h 29min,7h 40min,9:48 PM,5:34 AM,Behind
+2026-05-29,80,50,50,--,13.25,'-0.9°,34,Good,8h 16min,7h 40min,9:22 PM,6:13 AM,Behind
+2026-05-28,79,48,51,--,12.25,'-0.5°,34,Fair,7h 6min,7h 40min,9:17 PM,5:00 AM,Behind
+2026-05-27,88,46,62,--,11.81,'-0.4°,33,Good,7h 35min,7h 40min,9:13 PM,4:55 AM,Behind
+2026-05-26,92,49,78,--,12.31,'-0.4°,32,Excellent,8h 11min,8h 40min,8:45 PM,5:00 AM,Behind
+2026-05-25,36,51,14,--,19.29,'+0.6°,32,Poor,5h 1min,8h 10min,2:55 AM,8:40 AM,Not Aligned
+2026-05-24,89,47,77,--,12.54,'-0.6°,34,Good,7h 56min,8h 40min,9:14 PM,5:18 AM,Behind
+2026-05-23,40,54,19,--,17.58,0°,29,Poor,6h 24min,8h 10min,2:10 AM,9:27 AM,Not Aligned
+2026-05-22,82,52,47,--,12.79,'-0.3°,32,Good,7h 9min,7h 40min,9:46 PM,5:00 AM,Behind
+2026-05-21,83,50,50,--,13.02,'-0.1°,32,Good,8h 23min,8h 0min,8:49 PM,5:20 AM,Behind
+2026-05-20,79,50,46,--,12.46,0°,31,Fair,6h 52min,8h 0min,10:53 PM,5:45 AM,Behind
+2026-05-19,77,53,53,--,13.88,'+0.3°,32,Fair,6h 23min,8h 20min,11:13 PM,5:36 AM,Behind
+2026-05-18,72,55,35,--,15.89,'-0.2°,30,Fair,8h 46min,8h 40min,8:57 PM,5:54 AM,Behind
+2026-05-17,28,55,6,--,20.99,'+0.8°,27,Poor,3h 44min,8h 10min,3:55 AM,8:31 AM,Not Aligned
+2026-05-16,88,49,51,--,12.39,'+0.1°,31,Good,8h 11min,8h 20min,9:34 PM,5:53 AM,Behind
+2026-05-15,79,50,46,--,13.44,'-0.2°,31,Fair,7h 25min,8h 10min,9:54 PM,5:30 AM,Behind
+2026-05-14,82,49,42,--,13.75,'+0.2°,31,Good,7h 45min,8h 0min,9:45 PM,5:50 AM,Behind
+2026-05-13,90,50,59,--,12.12,'+0.3°,32,Excellent,8h 5min,8h 40min,9:46 PM,5:52 AM,Behind
+2026-05-12,55,51,20,--,16.31,'+0.9°,32,Poor,5h 50min,7h 20min,10:55 PM,4:59 AM,Behind
+2026-05-11,27,54,10,--,19.34,'+1.3°,34,Poor,4h 33min,8h 20min,11:09 PM,5:39 AM,Behind
+2026-05-10,--,--,--,--,--,--,--,--,--,--,--,--,--
+2026-05-09,68,51,46,--,11.5,0°,39,Fair,6h 21min,7h 40min,9:11 PM,4:07 AM,Behind
+2026-05-08,87,51,43,--,12.44,'+0.1°,38,Good,7h 33min,7h 40min,9:08 PM,4:41 AM,Behind
+2026-05-07,83,48,61,--,11.96,'+0.2°,38,Good,7h 7min,7h 40min,9:07 PM,4:33 AM,Behind
+2026-05-06,78,48,46,--,13.2,'-0.6°,38,Fair,6h 29min,7h 40min,10:10 PM,4:39 AM,Behind
+2026-05-05,85,49,54,--,12.9,'-0.1°,38,Good,7h 19min,7h 40min,9:13 PM,4:34 AM,Behind
+2026-05-04,86,49,52,--,12.95,'-0.3°,38,Good,7h 38min,7h 40min,9:07 PM,5:07 AM,Behind
+2026-05-03,79,51,45,--,12.83,'-0.2°,37,Fair,7h 2min,7h 40min,9:50 PM,4:54 AM,Behind
