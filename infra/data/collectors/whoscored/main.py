@@ -11,6 +11,7 @@ UPDATED: Fixed pandas 2.x compatibility issues
 
 import warnings
 import time
+from pathlib import Path
 import pandas as pd
 pd.options.mode.chained_assignment = None
 import json
@@ -27,28 +28,32 @@ except ModuleNotFoundError:
 
 
 from selenium import webdriver
-from selenium.webdriver.firefox.options import Options
+from selenium.webdriver.chrome.options import Options
 from selenium.common.exceptions import NoSuchElementException, WebDriverException, ElementClickInterceptedException, TimeoutException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
 
-def create_driver_with_options(headless=False, minimize=False):
+def create_driver_with_options(headless=True, minimize=False):
     options = Options()
-    options.set_preference("dom.webnotifications.enabled", False)
-    options.set_preference("dom.push.enabled", False)
-    options.set_preference("dom.webnotifications.serviceworker.enabled", False)
-    options.set_preference("dom.serviceWorkers.enabled", False)
-    
+    options.add_argument('--disable-notifications')
+    options.add_argument('--no-sandbox')
+    options.add_argument('--disable-dev-shm-usage')
+    options.add_argument('--disable-blink-features=AutomationControlled')
+    options.add_argument(
+        'user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 '
+        '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    )
+
     if headless:
-        options.add_argument('--headless')
-    
-    driver = webdriver.Firefox(options=options)
-    
+        options.add_argument('--headless=new')
+
+    driver = webdriver.Chrome(options=options)
+
     if minimize and not headless:
         driver.minimize_window()
-    
+
     return driver
 
 
@@ -380,6 +385,21 @@ def getFixtureData(driver, stop_before=None):
         initial = driver.page_source
 
         all_fixtures = driver.find_elements(By.CLASS_NAME, 'Accordion-module_accordion__UuHD0')
+
+        # Fail loud on the first page instead of silently returning 0 fixtures.
+        # An empty result here almost always means WhoScored's CSS-module class
+        # names changed (frontend redeploy) or the page served a bot-check —
+        # not that a real fixture list is empty.
+        if iteration_count == 1 and not all_fixtures:
+            debug_path = Path(__file__).parent / "_last_failure.html"
+            debug_path.write_text(driver.page_source, encoding="utf-8")
+            raise RuntimeError(
+                f"WhoScored fixture list not found (0 'Accordion-module_accordion' elements) "
+                f"on first page load. Page title: {driver.title!r}. This usually means "
+                f"WhoScored's frontend selectors changed or a bot-check page was served — "
+                f"not that there are genuinely no fixtures. Full page source dumped to "
+                f"{debug_path} for inspection."
+            )
 
         page_dates = []
         for dates in all_fixtures:

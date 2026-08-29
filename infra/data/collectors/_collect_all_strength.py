@@ -5,18 +5,24 @@ Orchestrates the full data collection pipeline:
   2b. FotMob ETL (non-penalty) — parses JSON → SQLite (np_shots, np_matches, red_cards, etc.)
   3. WhoScored EPV             — Selenium scrape → EPV + shot possession IDs in SQLite
 
+Each step runs independently — a failure in one is logged and the pipeline moves on to
+the next rather than dying silently, since this is meant to run unattended (cron/launchd).
+Every run appends to _run_log.txt next to this file, and on macOS a failure fires a
+native notification (nothing fires on success — the log is enough for a healthy run).
+
 Usage:
-    python _collect_all_strength.py [--season 2025-2026] [--start 2026-03-25] [--end 2026-03-26] [--xmas <header>]
+    python _collect_all_strength.py [--season 2025-2026] [--start 2026-03-25] [--end 2026-03-26]
 
 Defaults:
     --season  : current calendar-year pair based on today's date
     --start   : 7 days ago
     --end     : today
-    --xmas    : prompted interactively if not supplied
 """
 
 import argparse
+import subprocess
 import sys
+import traceback
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -31,6 +37,51 @@ from fotmob.fotmob_etl_database_non_penalty import main as fotmob_etl_np_main
 from fotmob.assign_gameweeks import write_to_db as assign_gameweeks_to_db
 from whoscored.whoscored_scraper import process_epv_data
 from whoscored.add_epv_to_events import add_epv_to_events_table
+
+RUN_LOG_PATH = _collectors / "_run_log.txt"
+
+
+class _Tee:
+    """Duplicates writes to the real stream and a log file, so existing print()
+    calls throughout the pipeline show up both on the console and in the run log
+    without having to rewrite them as logging calls."""
+
+    def __init__(self, stream, log_file):
+        self._stream = stream
+        self._log_file = log_file
+
+    def write(self, data):
+        self._stream.write(data)
+        self._log_file.write(data)
+
+    def flush(self):
+        self._stream.flush()
+        self._log_file.flush()
+
+
+def _notify_macos(title: str, message: str):
+    """Best-effort native notification. No-op (and silent) off macOS or if it fails —
+    this is a courtesy, not something the pipeline's success should depend on."""
+    try:
+        subprocess.run(
+            ["osascript", "-e", f'display notification "{message}" with title "{title}"'],
+            check=False,
+            timeout=10,
+        )
+    except Exception:
+        pass
+
+
+def run_step(name: str, failures: list, fn, *args, **kwargs):
+    """Run one pipeline step, catching and logging any exception instead of letting
+    it kill the rest of the pipeline — later steps are largely independent of earlier
+    ones (WhoScored doesn't depend on FotMob at all), so one bad step shouldn't mean
+    zero data collected on an unattended run."""
+    try:
+        fn(*args, **kwargs)
+    except Exception as e:
+        print(f"\n❌ Step failed: {name}\n{traceback.format_exc()}")
+        failures.append((name, str(e)))
 
 
 def _default_season():
@@ -87,6 +138,7 @@ def _parse_args():
 
 def main():
     args = _parse_args()
+    failures: list[tuple[str, str]] = []
 
     # ── Derive consistent formats from --season ──────────────────────────────
     # e.g. '2025-2026' → season_start=2025, whoscored_season='2025/2026'
@@ -126,25 +178,26 @@ def main():
     # ── Step 1: FotMob download ───────────────────────────────────────────────
     if not args.skip_fotmob_download:
         print("── Step 1: FotMob JSON download ──────────────────────────────")
-        store_season(league_cfg, season_start)
+        run_step("FotMob JSON download", failures, store_season, league_cfg, season_start)
     else:
         print("── Step 1: FotMob JSON download [SKIPPED] ────────────────────")
 
     # ── Step 2: FotMob ETL ────────────────────────────────────────────────────
     if not args.skip_fotmob_etl:
         print("\n── Step 2a: FotMob ETL (standard) → SQLite ───────────────────")
-        fotmob_etl_main(season=season_label, league=args.league)
+        run_step("FotMob ETL (standard)", failures, fotmob_etl_main, season=season_label, league=args.league)
         print("\n── Step 2b: FotMob ETL (non-penalty) → SQLite ────────────────")
-        fotmob_etl_np_main(season=season_label, league=args.league)
+        run_step("FotMob ETL (non-penalty)", failures, fotmob_etl_np_main, season=season_label, league=args.league)
         print("\n── Step 2c: Assign custom gameweeks ──────────────────────────")
-        assign_gameweeks_to_db(league=args.league, season=season_label)
+        run_step("Assign gameweeks", failures, assign_gameweeks_to_db, league=args.league, season=season_label)
     else:
         print("\n── Step 2: FotMob ETL [SKIPPED] ──────────────────────────────")
 
     # ── Step 3: WhoScored EPV ─────────────────────────────────────────────────
     if not args.skip_whoscored:
         print("\n── Step 3: WhoScored EPV scrape ──────────────────────────────")
-        process_epv_data(
+        run_step(
+            "WhoScored EPV scrape", failures, process_epv_data,
             start_date=start_date,
             end_date=end_date,
             season=whoscored_season,
@@ -152,14 +205,35 @@ def main():
             division=args.league,
         )
         print("\n── Step 3b: Write EPV values to match_events ─────────────────")
-        add_epv_to_events_table()
+        run_step("Write EPV to match_events", failures, add_epv_to_events_table)
     else:
         print("\n── Step 3: WhoScored EPV [SKIPPED] ───────────────────────────")
 
-    print("\n✅ Done.\n")
+    # ── Summary ────────────────────────────────────────────────────────────────
+    if failures:
+        print(f"\n⚠️  Completed with {len(failures)} failed step(s):")
+        for name, err in failures:
+            print(f"   - {name}: {err}")
+        _notify_macos(
+            "AlgoBetting pipeline: failures",
+            f"{len(failures)} step(s) failed — see _run_log.txt: " + ", ".join(n for n, _ in failures),
+        )
+    else:
+        print("\n✅ Done.\n")
+
+    return len(failures)
 
 
 if __name__ == "__main__":
-    main()
+    with open(RUN_LOG_PATH, "a", encoding="utf-8") as _log_file:
+        _log_file.write(f"\n{'='*60}\n{datetime.now().isoformat()} — starting run: {' '.join(sys.argv[1:])}\n{'='*60}\n")
+        sys.stdout = _Tee(sys.stdout, _log_file)
+        sys.stderr = _Tee(sys.stderr, _log_file)
+        try:
+            n_failures = main()
+        finally:
+            sys.stdout, sys.stderr = sys.stdout._stream, sys.stderr._stream
+
+    sys.exit(1 if n_failures else 0)
  
  

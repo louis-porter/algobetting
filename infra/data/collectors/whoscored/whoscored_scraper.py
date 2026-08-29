@@ -1,81 +1,10 @@
 import pandas as pd
-import matplotlib.pyplot as plt
-from selenium import webdriver
-from selenium.webdriver.firefox.options import Options
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, ElementClickInterceptedException
+from selenium.common.exceptions import ElementClickInterceptedException
 import main
-import seaborn as sns
 from datetime import datetime
 import sqlite3
 import time
 import json
-
-
-def create_driver_with_options():
-    options = Options()
-    options.set_preference("dom.webnotifications.enabled", False)
-    options.set_preference("dom.push.enabled", False)
-    driver = webdriver.Firefox(options=options)
-    return driver
-
-
-def dismiss_overlays(driver, timeout=5):
-    try:
-        close_selectors = [
-            ".webpush-swal2-close",
-            ".swal2-close",
-            "button.webpush-swal2-close",
-            "[aria-label='Close']"
-        ]
-        
-        for selector in close_selectors:
-            try:
-                close_button = WebDriverWait(driver, timeout).until(
-                    EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
-                )
-                close_button.click()
-                print("✅ Dismissed notification popup")
-                time.sleep(0.5)
-                return True
-            except TimeoutException:
-                continue
-            except Exception:
-                continue
-        
-    except Exception:
-        pass
-    
-    return False
-
-
-def safe_click(driver, element, max_attempts=3):
-    for attempt in range(max_attempts):
-        try:
-            element.click()
-            return True
-        except ElementClickInterceptedException:
-            print(f"⚠️  Click blocked by overlay (attempt {attempt + 1}/{max_attempts})")
-            dismiss_overlays(driver, timeout=2)
-            time.sleep(1)
-            if attempt == max_attempts - 1:
-                print("💡 Trying JavaScript click as fallback...")
-                try:
-                    driver.execute_script("arguments[0].click();", element)
-                    print("✅ JavaScript click succeeded")
-                    return True
-                except Exception as e:
-                    print(f"❌ JavaScript click failed: {e}")
-                    return False
-        except Exception as e:
-            print(f"❌ Unexpected error during click: {e}")
-            if attempt == max_attempts - 1:
-                return False
-            time.sleep(1)
-    
-    return False
 
 
 # ─────────────────────────────────────────────

@@ -318,7 +318,14 @@ def form_net_rating(weighted_df,
     """
     Weighted expected-goals net rating from scoreline data.
     Does NOT require a fitted model — uses the blended scoreline distributions.
+
+    Returns an empty (but correctly-columned) DataFrame if `weighted_df` has no
+    rows — e.g. early season, before any matches fall in the requested window —
+    rather than crashing on missing columns.
     """
+    if weighted_df.empty:
+        return pd.DataFrame(columns=['gf_avg', 'ga_avg', 'net_rating'])
+
     me = (weighted_df.groupby('match_id')
           .apply(lambda x: pd.Series({
               'exp_home_goals': (x['home_goals'] * x['weight']).sum() / x['weight'].sum(),
@@ -341,7 +348,15 @@ def form_net_rating(weighted_df,
         'w':   x['match_weight'].sum(),
     }))
 
-    ts = pd.DataFrame(index=home_s.index)
+    # Union, not home_s.index alone — early season, most teams have only played
+    # home *or* away so far, not both, so home_s/away_s are close to disjoint.
+    # Indexing off home_s.index and adding two misaligned Series gives NaN for
+    # any team missing from one side, rather than treating it as "0 so far".
+    all_teams = sorted(set(home_s.index) | set(away_s.index))
+    home_s = home_s.reindex(all_teams, fill_value=0)
+    away_s = away_s.reindex(all_teams, fill_value=0)
+
+    ts = pd.DataFrame(index=all_teams)
     ts['gf_avg']     = (home_s['gf'] + away_s['gf']) / (home_s['w'] + away_s['w']) + pen_avg
     ts['ga_avg']     = (home_s['ga'] + away_s['ga']) / (home_s['w'] + away_s['w']) + pen_avg
     ts['net_rating'] = ts['gf_avg'] - ts['ga_avg']

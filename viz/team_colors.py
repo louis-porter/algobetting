@@ -63,9 +63,12 @@ TEAM_COLORS = {
     'Brentford':        ('#E30613', '#FFE500'),   # red, yellow
     'Brighton':         ('#0057B8', '#FFCD00'),   # blue, yellow
     'Chelsea':          ('#034694', '#DBA111'),   # blue, gold
+    'Coventry':         ('#78D0F2', '#231F20'),   # sky blue, black
     'Crystal Palace':   ('#1B458F', '#C4122E'),   # blue, red
     'Everton':          ('#003399', '#A0A0A0'),   # blue, white (white used sparingly)
     'Fulham':           ('#231F20', '#CC0000'),   # black, red
+    'Hull':             ('#F18A00', '#000000'),   # amber, black (tiger stripes)
+    'Ipswich':          ('#0044A9', '#A0A0A0'),   # blue, white (white → grey for charts)
     'Liverpool':        ('#C8102E', '#00B2A9'),   # red, teal
     'Man City':         ('#6CABDD', '#1C2C5B'),   # sky blue, dark blue
     'Man United':       ('#DA291C', '#FBE122'),   # red, yellow

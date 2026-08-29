@@ -587,7 +587,7 @@ def prepare_model_data(df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, int], 
     """
     Prepare data for PyMC model by creating team mappings and indices.
     """
-    teams       = sorted(df["home_team"].unique())
+    teams       = sorted(set(df["home_team"].unique()) | set(df["away_team"].unique()))
     n_teams     = len(teams)
     team_mapping = {team: idx for idx, team in enumerate(teams)}
 
