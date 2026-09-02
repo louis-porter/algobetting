@@ -4,10 +4,11 @@ import pandas as pd
 import arviz as az
 from src.trace_save_load import save_season_trace
 
-def build_and_sample_model(train_df, n_teams, current_season=None, league=None, 
+def build_and_sample_model(train_df, n_teams, current_season=None, league=None,
                           trace=5000, tune=2500, team_mapping=None, model_version="v1",
                           manual_att_priors=None, manual_def_priors=None,
-                          red_card_priors=None):
+                          red_card_priors=None,
+                          home_adv_prior=None, baseline_prior=None):
     """Build and sample the football model with manual team priors and red card effects
     
     Parameters:
@@ -27,6 +28,15 @@ def build_and_sample_model(train_df, n_teams, current_season=None, league=None,
             'def_effect_sigma': float   # e.g., 0.15
         }
         If None, uses weakly informative priors
+    home_adv_prior : (mu, sigma) tuple, optional
+        Prior for the global home-advantage parameter. Defaults to (log(1.17), 0.1) --
+        the historical np_matches estimate -- if None. Pass a sigma-ramped value early in a
+        season (see manual_priors_2026_27.scaled_global_priors) since train_df is scoped to
+        the current season only: a handful of gameweeks is a genuinely small match sample
+        for this parameter too, not just for team-level att/def.
+    baseline_prior : (mu, sigma) tuple, optional
+        Prior for the global baseline scoring-rate parameter. Defaults to (log(1.26), 0.1)
+        if None. Same early-season sample-size reasoning as home_adv_prior.
     
     Expected columns in train_df for red card modeling:
     -----------
@@ -118,9 +128,12 @@ def build_and_sample_model(train_df, n_teams, current_season=None, league=None,
             sigma=red_card_priors['def_effect_sigma']
         )
         
-        # Other model components
-        home_adv = pm.Normal("home_adv", mu=np.log(1.17), sigma=0.1) # Priors of np_matches before current season 2025/26
-        baseline = pm.Normal("baseline", mu=np.log(1.26), sigma=0.1)
+        # Other model components. Priors of np_matches before current season 2025/26,
+        # sigma optionally ramped for early-season sample size -- see docstring above.
+        home_adv_mu, home_adv_sigma = home_adv_prior if home_adv_prior is not None else (np.log(1.17), 0.1)
+        baseline_mu, baseline_sigma = baseline_prior if baseline_prior is not None else (np.log(1.26), 0.1)
+        home_adv = pm.Normal("home_adv", mu=home_adv_mu, sigma=home_adv_sigma)
+        baseline = pm.Normal("baseline", mu=baseline_mu, sigma=baseline_sigma)
 
         # ADJUSTED GOAL RATES WITH RED CARD EFFECTS
         # Home team scoring: reduced if home has red, increased if away has red (weaker defense)

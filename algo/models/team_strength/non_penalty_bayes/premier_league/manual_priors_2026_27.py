@@ -110,7 +110,7 @@ MANUAL_DEF_PRIORS = _normalise(_RAW_DEF)
 # rises smoothly from ~half the season target at GW1 to the full target by
 # GW10, so ramp sigma over the same window rather than applying the season
 # value from kickoff.
-def sigma_ramp_scale(games_played: int, ramp_games: int = 10, start_fraction: float = 0.5) -> float:
+def sigma_ramp_scale(games_played: int, ramp_games: int = 10, start_fraction: float = 0.4) -> float:
     """
     Fraction of season-target sigma to use, given games played so far.
 
@@ -124,7 +124,7 @@ def sigma_ramp_scale(games_played: int, ramp_games: int = 10, start_fraction: fl
     return start_fraction + (1.0 - start_fraction) * progress
 
 
-def scaled_priors(games_played: int, ramp_games: int = 10, start_fraction: float = 0.5):
+def scaled_priors(games_played: int, ramp_games: int = 10, start_fraction: float = 0.4):
     """
     Return (att_priors, def_priors) with sigma scaled per the early-season
     ramp -- mu is untouched. Use this instead of MANUAL_ATT_PRIORS /
@@ -135,3 +135,30 @@ def scaled_priors(games_played: int, ramp_games: int = 10, start_fraction: float
     att = {t: (mu, sigma * scale) for t, (mu, sigma) in MANUAL_ATT_PRIORS.items()}
     defn = {t: (mu, sigma * scale) for t, (mu, sigma) in MANUAL_DEF_PRIORS.items()}
     return att, defn
+
+
+# ── Global (home_adv/baseline) priors and their early-season ramp ────────────
+# Historical anchor from np_matches, pre-2025/26 -- previously hardcoded directly in
+# src/model.py with a fixed sigma and no ramp at all. That's a real gap: these are
+# league-wide averages, not team-specific, but load_and_process_data scopes to the
+# *current* season only (no cross-season blending), so a handful of early gameweeks means
+# a genuinely tiny match sample feeds them too (~20 matches total by GW2 for the whole
+# league) -- the same small-sample overreaction risk sigma_ramp_scale() already exists to
+# fix for att/def, just previously unaddressed here. Checked empirically before adding this
+# (see analysis discussion): PL's season-level average goals shows no clean multi-season
+# upward trend (2.70/2.82/2.85/3.28/2.93/2.75 across 2020-21..2025-26) that would justify
+# moving the prior *mean* -- a hot first few gameweeks looks like ordinary small-sample
+# noise, not a level shift, so only sigma is ramped here, exactly mirroring scaled_priors().
+HOME_ADV_PRIOR_MU = np.log(1.17)
+HOME_ADV_PRIOR_SIGMA = 0.1
+BASELINE_PRIOR_MU = np.log(1.26)
+BASELINE_PRIOR_SIGMA = 0.1
+
+
+def scaled_global_priors(games_played: int, ramp_games: int = 10, start_fraction: float = 0.4):
+    """(home_adv_prior, baseline_prior) as (mu, sigma) tuples for build_and_sample_model,
+    sigma-ramped the same way and over the same window as scaled_priors()."""
+    scale = sigma_ramp_scale(games_played, ramp_games, start_fraction)
+    home_adv_prior = (HOME_ADV_PRIOR_MU, HOME_ADV_PRIOR_SIGMA * scale)
+    baseline_prior = (BASELINE_PRIOR_MU, BASELINE_PRIOR_SIGMA * scale)
+    return home_adv_prior, baseline_prior

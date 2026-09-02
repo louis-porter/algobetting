@@ -19,15 +19,23 @@ import sqlite3
 import numpy as np
 import pandas as pd
 
-BASELINE_HOME_PENS = 0.157 * 0.78
-BASELINE_AWAY_PENS = 0.101 * 0.78
+# NOTE: home_pen_rate/away_pen_rate are required (no default) everywhere below, on purpose.
+# This module used to default them to Premier League's flat literal (0.157*0.78/0.101*0.78)
+# -- which meant Superligaen's outputs.ipynb, which calls run_multiple_seasons without
+# passing its own rate, was silently simulating seasons with PL's penalty baseline instead
+# of its own. Forcing every call site to pass its own league's rate (from
+# src.penalties.get_penalty_baseline) removes that whole class of bug rather than just
+# patching this one instance of it.
 
 
 # ── Match prediction ──────────────────────────────────────────────────────────
 
 def predict_match(home_team, away_team, trace, team_mapping,
-                  home_pen_rate=BASELINE_HOME_PENS,
-                  away_pen_rate=BASELINE_AWAY_PENS):
+                  home_pen_rate, away_pen_rate, pen_multipliers=None):
+    """`pen_multipliers`, if given, is a {team: multiplier} dict (see
+    src.penalties.compute_penalty_multipliers) scaling home_pen_rate/away_pen_rate by each
+    side's own relative team quality instead of applying the same flat rate to every team.
+    Defaults to 1.0 for any team not in the dict, or when pen_multipliers is None."""
     hi = team_mapping[home_team]
     ai = team_mapping[away_team]
 
@@ -38,8 +46,11 @@ def predict_match(home_team, away_team, trace, team_mapping,
     base = trace.posterior['baseline'].values.flatten()
     hadv = trace.posterior['home_adv'].values.flatten()
 
-    h_lam = np.exp(base + hadv + att[:, hi] + defn[:, ai]) + home_pen_rate
-    a_lam = np.exp(base         + att[:, ai] + defn[:, hi]) + away_pen_rate
+    home_mult = pen_multipliers.get(home_team, 1.0) if pen_multipliers else 1.0
+    away_mult = pen_multipliers.get(away_team, 1.0) if pen_multipliers else 1.0
+
+    h_lam = np.exp(base + hadv + att[:, hi] + defn[:, ai]) + home_pen_rate * home_mult
+    a_lam = np.exp(base         + att[:, ai] + defn[:, hi]) + away_pen_rate * away_mult
 
     hg = np.random.poisson(h_lam)
     ag = np.random.poisson(a_lam)
@@ -56,9 +67,8 @@ def predict_match(home_team, away_team, trace, team_mapping,
 # ── Expected-goals pre-computation ───────────────────────────────────────────
 
 def precompute_expected_goals(trace, team_mapping, df_actual,
-                              home_pen_rate=BASELINE_HOME_PENS,
-                              away_pen_rate=BASELINE_AWAY_PENS,
-                              remaining_fixtures=None):
+                              home_pen_rate, away_pen_rate,
+                              remaining_fixtures=None, pen_multipliers=None):
     """
     Returns
     -------
@@ -101,7 +111,7 @@ def precompute_expected_goals(trace, team_mapping, df_actual,
             if home not in team_mapping or away not in team_mapping:
                 continue
             pred = predict_match(home, away, trace, team_mapping,
-                                 home_pen_rate, away_pen_rate)
+                                 home_pen_rate, away_pen_rate, pen_multipliers=pen_multipliers)
             xg_cache[(home, away)] = (pred['home_goals_expected'], pred['away_goals_expected'])
 
         # Every played game → actual_results list (duplicates preserved)
@@ -127,7 +137,7 @@ def precompute_expected_goals(trace, team_mapping, df_actual,
                     continue
                 key  = (home, away)
                 pred = predict_match(home, away, trace, team_mapping,
-                                     home_pen_rate, away_pen_rate)
+                                     home_pen_rate, away_pen_rate, pen_multipliers=pen_multipliers)
                 hxg, axg = pred['home_goals_expected'], pred['away_goals_expected']
 
                 if key in played:
@@ -189,15 +199,14 @@ def simulate_full_season_fast(actual_results, expected_goals, teams):
 # ── Full Monte-Carlo simulation ───────────────────────────────────────────────
 
 def run_multiple_seasons(n_simulations, trace, team_mapping, df_actual,
-                         home_pen_rate=BASELINE_HOME_PENS,
-                         away_pen_rate=BASELINE_AWAY_PENS,
-                         remaining_fixtures=None):
+                         home_pen_rate, away_pen_rate,
+                         remaining_fixtures=None, pen_multipliers=None):
     teams   = list(team_mapping.keys())
     n       = len(teams)
 
     actual_results, expected_goals = precompute_expected_goals(
         trace, team_mapping, df_actual, home_pen_rate, away_pen_rate,
-        remaining_fixtures=remaining_fixtures)
+        remaining_fixtures=remaining_fixtures, pen_multipliers=pen_multipliers)
 
     acc = {k: np.zeros(n, dtype=np.float64) for k in
            ['pts', 'pts_sq', 'w', 'd', 'l', 'gf', 'ga', 'xgf', 'xga', 'pos']}
@@ -312,9 +321,7 @@ def get_actual_standings(actual_results_list, teams):
 
 # ── Form rating (no model needed — derived from weighted scoreline data) ──────
 
-def form_net_rating(weighted_df,
-                    home_pen_rate=BASELINE_HOME_PENS,
-                    away_pen_rate=BASELINE_AWAY_PENS):
+def form_net_rating(weighted_df, home_pen_rate, away_pen_rate, pen_multipliers=None):
     """
     Weighted expected-goals net rating from scoreline data.
     Does NOT require a fitted model — uses the blended scoreline distributions.
@@ -322,6 +329,12 @@ def form_net_rating(weighted_df,
     Returns an empty (but correctly-columned) DataFrame if `weighted_df` has no
     rows — e.g. early season, before any matches fall in the requested window —
     rather than crashing on missing columns.
+
+    `pen_multipliers`, if given, scales each team's own penalty addition by its relative
+    quality (see src.penalties.compute_penalty_multipliers). Note this doesn't move
+    `net_rating` itself either way — the same per-team addition goes into both `gf_avg` and
+    `ga_avg`, so it cancels in the difference — it only affects the absolute `gf_avg`/
+    `ga_avg` values shown (which do get surfaced, e.g. in the Substack export).
     """
     if weighted_df.empty:
         return pd.DataFrame(columns=['gf_avg', 'ga_avg', 'net_rating'])
@@ -356,9 +369,11 @@ def form_net_rating(weighted_df,
     home_s = home_s.reindex(all_teams, fill_value=0)
     away_s = away_s.reindex(all_teams, fill_value=0)
 
+    team_mult = pd.Series({t: (pen_multipliers.get(t, 1.0) if pen_multipliers else 1.0) for t in all_teams})
+
     ts = pd.DataFrame(index=all_teams)
-    ts['gf_avg']     = (home_s['gf'] + away_s['gf']) / (home_s['w'] + away_s['w']) + pen_avg
-    ts['ga_avg']     = (home_s['ga'] + away_s['ga']) / (home_s['w'] + away_s['w']) + pen_avg
+    ts['gf_avg']     = (home_s['gf'] + away_s['gf']) / (home_s['w'] + away_s['w']) + pen_avg * team_mult
+    ts['ga_avg']     = (home_s['ga'] + away_s['ga']) / (home_s['w'] + away_s['w']) + pen_avg * team_mult
     ts['net_rating'] = ts['gf_avg'] - ts['ga_avg']
     return ts.sort_values('net_rating', ascending=False)
 
