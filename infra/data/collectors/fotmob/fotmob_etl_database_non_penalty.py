@@ -118,7 +118,7 @@ def process_json_files(folder_path):
                     ft_found = True
                     if event.get("type") == "Goal":
                         # Get situation from the nested shotmapEvent object
-                        situation = event.get("shotmapEvent", {}).get("situation")
+                        situation = (event.get("shotmapEvent") or {}).get("situation")
                         if situation != "Penalty":
                             ft_found = True
                             if event.get("isHome") == True:
@@ -160,7 +160,7 @@ def process_json_files(folder_path):
                     ft_found = True
                     if event.get("type") == "Goal":
                         # Get situation from the nested shotmapEvent object
-                        situation = event.get("shotmapEvent", {}).get("situation")                     
+                        situation = (event.get("shotmapEvent") or {}).get("situation")
                         if situation == "Penalty":
                             if event.get("isHome") == True:
                                 home_pens += 1
@@ -404,6 +404,17 @@ def save_to_database(shots_df, red_cards_df, matches_df, match_stats_df, penalti
             table_exists = cursor.fetchone() is not None
             
             if table_exists:
+                # Add any columns the source has that the table doesn't yet (e.g. FotMob
+                # introducing new stat fields mid-season) so inserts don't hard-fail.
+                cursor.execute(f"PRAGMA table_info({table_name})")
+                existing_cols = {row[1] for row in cursor.fetchall()}
+                for col in df.columns:
+                    if col not in existing_cols:
+                        cursor.execute(f'ALTER TABLE {table_name} ADD COLUMN "{col}" TEXT')
+                        print(f"  Added new column '{col}' to '{table_name}' table")
+                if any(col not in existing_cols for col in df.columns):
+                    conn.commit()
+
                 # If key_columns specified, use those for duplicate checking
                 # Otherwise use all columns
                 if key_columns:
