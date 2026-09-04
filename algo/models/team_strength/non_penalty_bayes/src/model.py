@@ -130,10 +130,12 @@ def build_and_sample_model(train_df, n_teams, current_season=None, league=None,
         
         # Other model components. Priors of np_matches before current season 2025/26,
         # sigma optionally ramped for early-season sample size -- see docstring above.
-        home_adv_mu, home_adv_sigma = home_adv_prior if home_adv_prior is not None else (np.log(1.17), 0.1)
         baseline_mu, baseline_sigma = baseline_prior if baseline_prior is not None else (np.log(1.26), 0.1)
+        home_adv_mu, home_adv_sigma = home_adv_prior if home_adv_prior is not None else (np.log(1.17), 0.1)
         home_adv = pm.Normal("home_adv", mu=home_adv_mu, sigma=home_adv_sigma)
         baseline = pm.Normal("baseline", mu=baseline_mu, sigma=baseline_sigma)
+        # home_adv = pm.Deterministic("home_adv", pm.math.constant(np.log(1.17)))
+        # baseline = pm.Deterministic("baseline", pm.math.constant(np.log(1.26)))
 
         # ADJUSTED GOAL RATES WITH RED CARD EFFECTS
         # Home team scoring: reduced if home has red, increased if away has red (weaker defense)
