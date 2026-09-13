@@ -58,29 +58,38 @@ def create_driver_with_options(headless=True, minimize=False):
 
 
 def safe_click(driver, element, max_attempts=3):
+    """
+    Click with retries. Previously the JS-click fallback only ran after an
+    ElementClickInterceptedException (overlay) — an ElementNotInteractableException
+    (e.g. element not scrolled into view) fell into the generic except branch and
+    just gave up after max_attempts with no fallback, silently killing pagination
+    (and, upstream, making a whole date-range chunk report "0 matches found"
+    instead of erroring). Both branches now fall through to the same JS-click
+    fallback on the last attempt, and every attempt scrolls the element into view
+    first since that's the most common cause of "not interactable".
+    """
     for attempt in range(max_attempts):
         try:
+            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
             element.click()
             return True
         except ElementClickInterceptedException:
             print(f"⚠️  Click blocked by overlay (attempt {attempt + 1}/{max_attempts})")
             dismiss_overlays(driver, wait_time=1)
-            time.sleep(1)
-            if attempt == max_attempts - 1:
-                print("💡 Trying JavaScript click as fallback...")
-                try:
-                    driver.execute_script("arguments[0].click();", element)
-                    print("✅ JavaScript click succeeded")
-                    return True
-                except Exception as e:
-                    print(f"❌ JavaScript click failed: {e}")
-                    return False
         except Exception as e:
-            print(f"❌ Unexpected error during click: {e}")
-            if attempt == max_attempts - 1:
+            print(f"❌ Unexpected error during click (attempt {attempt + 1}/{max_attempts}): {str(e).splitlines()[0]}")
+
+        if attempt == max_attempts - 1:
+            print("💡 Trying JavaScript click as fallback...")
+            try:
+                driver.execute_script("arguments[0].click();", element)
+                print("✅ JavaScript click succeeded")
+                return True
+            except Exception as e:
+                print(f"❌ JavaScript click failed: {str(e).splitlines()[0]}")
                 return False
-            time.sleep(1)
-    
+        time.sleep(1)
+
     return False
 
 
@@ -439,7 +448,12 @@ def getFixtureData(driver, stop_before=None):
             )
 
             if not safe_click(driver, prev_btn):
-                print("Could not click previous button, ending pagination")
+                # Distinct from a natural end-of-fixtures/early-exit stop — this is
+                # pagination being cut short by a UI failure, which previously
+                # surfaced only as a suspiciously-low/zero "Found N matches" count
+                # further up the call stack with no indication anything went wrong.
+                print(f"🛑 PAGINATION STOPPED EARLY: could not click previous button after "
+                      f"{iteration_count} iteration(s) — results for this window are likely INCOMPLETE")
                 break
 
             time.sleep(1)
@@ -479,8 +493,22 @@ def translateDate(data):
 
 
 def getSortedData(data):
-    data = sorted(data, key=lambda i: dt.strptime(i['date'], '%A, %b %d %Y'))
-    return data
+    """
+    Sort fixtures by date, skipping any with an unparseable date (e.g. a blank
+    accordion header) instead of raising and losing the whole season's fixture
+    list — a single bad row previously took out all 380 matches at once.
+    """
+    parsed = []
+    n_bad = 0
+    for i in data:
+        try:
+            parsed.append((dt.strptime(i['date'], '%A, %b %d %Y'), i))
+        except (ValueError, TypeError):
+            n_bad += 1
+    if n_bad:
+        print(f"⚠️  Skipping {n_bad} fixture(s) with an unparseable date")
+    parsed.sort(key=lambda pair: pair[0])
+    return [i for _, i in parsed]
 
 
 def getMatchData(driver, url, display=True, close_window=True, max_retries=3):

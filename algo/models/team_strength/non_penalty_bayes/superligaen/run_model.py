@@ -26,7 +26,7 @@ DECAY_RATE   = 0.0018
 GOALS_WEIGHT = 0.27
 XG_WEIGHT    = 0.55
 PSXG_WEIGHT  = 0.17
-EPV_WEIGHT   = 0.0
+XT_WEIGHT    = 0.0
 
 N_SAMPLES = 2_000
 N_TUNE    = 1_000
@@ -43,7 +43,7 @@ def main():
         goals_weight=GOALS_WEIGHT,
         xg_weight=XG_WEIGHT,
         psxg_weight=PSXG_WEIGHT,
-        epv_weight=EPV_WEIGHT,
+        xt_weight=XT_WEIGHT,
     )
     print(f"  {n_teams} teams, {df['match_id'].nunique()} matches")
 

@@ -3,7 +3,7 @@ Orchestrates the full data collection pipeline:
   1. FotMob season downloader  — fetches raw match JSON files (skips already-downloaded)
   2. FotMob ETL (standard)     — parses JSON → SQLite (matches, shots, etc.)
   2b. FotMob ETL (non-penalty) — parses JSON → SQLite (np_shots, np_matches, red_cards, etc.)
-  3. WhoScored EPV             — Selenium scrape → EPV + shot possession IDs in SQLite
+  3. WhoScored EPV + xT        — Selenium scrape → EPV, xT, shot possession IDs in SQLite
 
 Each step runs independently — a failure in one is logged and the pipeline moves on to
 the next rather than dying silently, since this is meant to run unattended (cron/launchd).
@@ -37,6 +37,7 @@ from fotmob.fotmob_etl_database_non_penalty import main as fotmob_etl_np_main
 from fotmob.assign_gameweeks import write_to_db as assign_gameweeks_to_db
 from whoscored.whoscored_scraper import process_epv_data
 from whoscored.add_epv_to_events import add_epv_to_events_table
+from whoscored.xt_model import fit_and_write_xt
 
 RUN_LOG_PATH = _collectors / "_run_log.txt"
 
@@ -206,6 +207,8 @@ def main():
         )
         print("\n── Step 3b: Write EPV values to match_events ─────────────────")
         run_step("Write EPV to match_events", failures, add_epv_to_events_table)
+        print("\n── Step 3c: Fit + write xT (expected threat) ──────────────────")
+        run_step("Fit and write xT", failures, fit_and_write_xt)
     else:
         print("\n── Step 3: WhoScored EPV [SKIPPED] ───────────────────────────")
 

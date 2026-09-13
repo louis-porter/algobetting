@@ -41,7 +41,7 @@ DECAY_RATE   = 0.0018
 GOALS_WEIGHT = 0.25
 XG_WEIGHT    = 0.50
 PSXG_WEIGHT  = 0.15
-EPV_WEIGHT   = 0.10
+XT_WEIGHT    = 0.10
 
 # Penalty baseline — matches outputs.ipynb
 BASELINE_HOME_PENS = 0.157 * 0.78
@@ -445,7 +445,7 @@ def main():
         db_path=DB_PATH, league=LEAGUE, season=SEASON,
         decay_rate=DECAY_RATE,
         goals_weight=GOALS_WEIGHT, xg_weight=XG_WEIGHT,
-        psxg_weight=PSXG_WEIGHT, epv_weight=EPV_WEIGHT,
+        psxg_weight=PSXG_WEIGHT, xt_weight=XT_WEIGHT,
     )
 
     gw_windows = load_gw_windows(DB_PATH, LEAGUE, SEASON, EVAL_START, EVAL_END)

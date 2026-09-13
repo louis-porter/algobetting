@@ -19,6 +19,17 @@ WS_TO_FM_NAMES = {
 # Garbage time thresholds: (min_margin, from_minute)
 _GARBAGE_TIME_RULES = [(4, 45), (3, 57), (2, 87)]
 
+# gross_xT (sum of positive action-value deltas per team-match) runs on a scale
+# of ~2.1 avg/team-match, well above the ~1.3 avg/team-match that actual goals
+# and xG sit at (2025-26 PL season) — it's a cumulative sum over ~150-300
+# actions, not a shot-calibrated probability like xG, so there's no reason for
+# it to land on the same scale by construction. Used uncorrected, its Poisson
+# rate pulls the blended goal total up (~2.82 -> ~2.9 observed). This rescales
+# it to the xG average so it acts as a peer signal instead of an outsized one;
+# relative team-to-team differences are preserved (it's a single linear scale).
+# Derived from: mean xG/team-match (1.320) / mean gross_xT/team-match (2.126).
+XT_TO_GOALS_SCALE = 0.621
+
 
 def _garbage_time_start(goals: pd.DataFrame,
                         side_col: str = 'side',
@@ -52,13 +63,14 @@ def load_football_data(
     end: Optional[date] = None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
-    Load match, shot, red card, EPV, all-shots, and match-events data.
+    Load match, shot, red card, xT, all-shots, and match-events data.
 
     Returns
     -------
-    match_df, shot_df, red_df, epv_df, all_shots_df, events_df
-        all_shots_df : FotMob shots (incl. penalties) — used for garbage time detection
-        events_df    : WhoScored match_events — used for competitive EPV computation
+    match_df, shot_df, red_df, xt_df, all_shots_df, events_df, xt_actions_df
+        all_shots_df  : FotMob shots (incl. penalties) — used for garbage time detection
+        events_df     : WhoScored match_events (goals only) — used for garbage-time detection
+        xt_actions_df : WhoScored xt_actions (passes + synthesized carries) — used for competitive xT
     """
     conn = sqlite3.connect(db_path)
 
@@ -155,21 +167,28 @@ def load_football_data(
             {date_clause}
     """, conn, params=filtered_params)
 
-    # ── EPV (aggregated, match-level) ─────────────────────────────────────────
-    epv_df = pd.read_sql_query(f"""
+    # ── xT (aggregated, match-level) ────────────────────────────────────────────
+    # Uses gross_xT (sum of positive action deltas only), not the net xT column —
+    # net sum conflates goal-relevant progression with backward/lateral possession
+    # circulation that isn't really "threat" (see project_xt_model_premier_league
+    # memory / the Man City discussion: net sum systematically penalises
+    # high-possession teams for a stylistic trait, not chance creation). The other
+    # four blend signals (goals, xG, PSxG, Bernoulli xG) are all non-negative
+    # accumulations of danger, so gross_xT is the fair peer to them.
+    xt_df = pd.read_sql_query(f"""
         SELECT DISTINCT
             red.match_id,
             red.match_date,
-            epv.team,
-            epv.EPV,
-            epv.season,
-            epv.division as league_id
+            xt.team,
+            xt.gross_xT as xT,
+            xt.season,
+            xt.division as league_id
         FROM np_shots red
         JOIN team_id_mapping team ON team.team_id = red.teamId
-        JOIN epv ON epv.team = team.team_name AND red.match_date = DATE(epv.startDate)
+        JOIN xt ON xt.team = team.team_name AND red.match_date = DATE(xt.startDate)
         WHERE
             division IN ({league_placeholders})
-            AND epv.season = ?
+            AND xt.season = ?
             {date_clause}
     """, conn, params=filtered_params)
 
@@ -188,7 +207,7 @@ def load_football_data(
             {date_clause}
     """, conn, params=filtered_params)
 
-    # ── Match events (WhoScored) — for competitive EPV ────────────────────────
+    # ── Match events (WhoScored) — goals + one context row/match, for garbage time ──
     events_df = pd.read_sql_query(f"""
         SELECT
             matchId,
@@ -197,42 +216,65 @@ def load_football_data(
             awayTeam,
             h_a,
             minute,
-            EPV,
             isGoal,
             goalOwn
         FROM match_events
         WHERE
             division IN ({league_placeholders})
             AND season = ?
-            AND (EPV IS NOT NULL OR isGoal = 1)
+            AND (isGoal = 1 OR type = 'Start')
+            {events_date_clause}
+    """, conn, params=events_params)
+
+    # ── xT actions (WhoScored passes + synthesized carries) — for competitive xT ──
+    xt_actions_df = pd.read_sql_query(f"""
+        SELECT
+            matchId,
+            DATE(startDate) as match_date,
+            team,
+            minute,
+            xT
+        FROM xt_actions
+        WHERE
+            division IN ({league_placeholders})
+            AND season = ?
             {events_date_clause}
     """, conn, params=events_params)
 
     conn.close()
 
-    # days_ago for time-decay (applied to match_df, shot_df, red_df, epv_df)
+    # days_ago for time-decay (applied to match_df, shot_df, red_df, xt_df)
     ref_date = pd.to_datetime(match_df["match_date"]).max() if not match_df.empty else pd.Timestamp.today()
-    for df in [match_df, shot_df, red_df, epv_df]:
+    for df in [match_df, shot_df, red_df, xt_df]:
         df["days_ago"] = (ref_date - pd.to_datetime(df["match_date"])).dt.days
         df["match_date"] = pd.to_datetime(df["match_date"])
 
     all_shots_df["match_date"] = pd.to_datetime(all_shots_df["match_date"])
     events_df["match_date"] = pd.to_datetime(events_df["match_date"])
+    xt_actions_df["match_date"] = pd.to_datetime(xt_actions_df["match_date"])
 
-    return match_df, shot_df, red_df, epv_df, all_shots_df, events_df
+    return match_df, shot_df, red_df, xt_df, all_shots_df, events_df, xt_actions_df
 
 
-def compute_competitive_epv(events_df: pd.DataFrame) -> pd.DataFrame:
+def compute_competitive_xt(events_df: pd.DataFrame, xt_actions_df: pd.DataFrame) -> pd.DataFrame:
     """
-    Compute per-team EPV summed only over non-garbage-time events.
+    Compute per-team gross positive xT summed only over non-garbage-time actions.
 
-    Uses WhoScored match_events with event-level EPV and goal flags.
+    Uses gross (positive-only) xT, matching the base xT signal in xt_df — see
+    the comment on that query in load_football_data for why net sum isn't used.
+
+    Goal timing/ownership comes from WhoScored match_events (isGoal/goalOwn/h_a) —
+    used only to find the garbage-time cutoff. The actual valued actions (passes
+    plus synthesized carries) come from xt_actions, since that's where the xT
+    grid's per-action values live (see whoscored/xt_model.py) — match_events
+    itself carries no xT column.
+
     Own goals are attributed to the correct team before scoreline reconstruction.
     Team names are normalised to FotMob conventions via WS_TO_FM_NAMES.
 
     Returns
     -------
-    DataFrame with columns: match_date, team, competitive_epv
+    DataFrame with columns: match_date, team, competitive_xt
     """
     records = []
 
@@ -254,15 +296,16 @@ def compute_competitive_epv(events_df: pd.DataFrame) -> pd.DataFrame:
 
         gt_start = _garbage_time_start(goals, side_col='side', min_col='minute')
 
-        pre_gc = grp[grp['minute'] < gt_start]
-        home_epv = pre_gc[pre_gc['h_a'] == 'h']['EPV'].sum()
-        away_epv = pre_gc[pre_gc['h_a'] == 'a']['EPV'].sum()
+        match_actions = xt_actions_df[xt_actions_df['matchId'] == match_id]
+        pre_gc = match_actions[match_actions['minute'] < gt_start]
+        home_xt = pre_gc[pre_gc['team'] == home_fm]['xT'].clip(lower=0).sum()
+        away_xt = pre_gc[pre_gc['team'] == away_fm]['xT'].clip(lower=0).sum()
 
-        records.append({'match_date': match_date, 'team': home_fm, 'competitive_epv': home_epv})
-        records.append({'match_date': match_date, 'team': away_fm, 'competitive_epv': away_epv})
+        records.append({'match_date': match_date, 'team': home_fm, 'competitive_xt': home_xt})
+        records.append({'match_date': match_date, 'team': away_fm, 'competitive_xt': away_xt})
 
     return pd.DataFrame(records) if records else pd.DataFrame(
-        columns=['match_date', 'team', 'competitive_epv']
+        columns=['match_date', 'team', 'competitive_xt']
     )
 
 
@@ -379,7 +422,7 @@ def create_weighted_scoreline_data(
     match_df: pd.DataFrame,
     shot_df: pd.DataFrame,
     red_df: pd.DataFrame,
-    epv_df: pd.DataFrame,
+    xt_df: pd.DataFrame,
     all_shots_df: pd.DataFrame,
     max_goals: int = 9,
     min_prob_threshold: float = 0.000,
@@ -389,13 +432,13 @@ def create_weighted_scoreline_data(
     xg_weight: float = 0.30,
     psxg_weight: float = 0.25,
     bernoulli_weight: float = 0.10,
-    epv_weight: float = 0.10,
+    xt_weight: float = 0.10,
     # Garbage-time-cleaned signal weights (0 = disabled)
     gc_goals_weight: float = 0.0,
     gc_xg_weight: float = 0.0,
     gc_psxg_weight: float = 0.0,
     gc_bernoulli_weight: float = 0.0,
-    gc_epv_weight: float = 0.0,
+    gc_xt_weight: float = 0.0,
 ) -> pd.DataFrame:
     """
     Build weighted scoreline distributions for each match by blending up to ten
@@ -407,14 +450,14 @@ def create_weighted_scoreline_data(
     2. xg_total      — Poisson centred on possession-aggregated xG sum
     3. psxg_pb       — Poisson-Binomial over possession-aggregated PSxG
     4. bernoulli     — Poisson-Binomial over possession-aggregated xG
-    5. epv           — Poisson centred on match EPV totals
+    5. xt            — Poisson centred on match xT totals
 
     Garbage-time-cleaned variants (gc_* weights)
     --------------------------------------------
-    Same as above, but shots / goals / EPV after garbage time starts are excluded.
+    Same as above, but shots / goals / xT after garbage time starts are excluded.
     Garbage time is determined per match from all FotMob shots (incl. penalties)
-    using _GARBAGE_TIME_RULES. EPV garbage time uses the pre-merged
-    'competitive_epv' column on epv_df (computed from WhoScored match_events).
+    using _GARBAGE_TIME_RULES. xT garbage time uses the pre-merged
+    'competitive_xt' column on xt_df (computed from WhoScored xt_actions).
 
     Set gc_* weights to 0 (default) to disable entirely.
 
@@ -423,13 +466,13 @@ def create_weighted_scoreline_data(
     all_shots_df : DataFrame
         FotMob shots table (includes penalties) with columns:
         match_id, side, min, eventType — used to detect garbage time start minute.
-    epv_df : DataFrame
-        Must contain 'EPV' (base) and optionally 'competitive_epv' (gc variant).
-        If 'competitive_epv' is absent, gc EPV falls back to full EPV.
+    xt_df : DataFrame
+        Must contain 'xT' (base) and optionally 'competitive_xt' (gc variant).
+        If 'competitive_xt' is absent, gc xT falls back to full xT.
     """
     expanded_data = []
 
-    has_gc_epv = 'competitive_epv' in epv_df.columns
+    has_gc_xt = 'competitive_xt' in xt_df.columns
 
     for _, row in match_df.iterrows():
         match_id    = row['match_id']
@@ -471,14 +514,14 @@ def create_weighted_scoreline_data(
         gc_home_psxg_probs, _                  = aggregate_possession_xg(gc_shots, 'home', 'expectedGoalsOnTarget')
         gc_away_psxg_probs, _                  = aggregate_possession_xg(gc_shots, 'away', 'expectedGoalsOnTarget')
 
-        # ── EPV lookup ────────────────────────────────────────────────────────
-        match_epv = epv_df[epv_df['match_id'] == match_id]
-        home_epv  = match_epv[match_epv['team'] == row['home_team']]['EPV'].values[0]        if not match_epv.empty else 0
-        away_epv  = match_epv[match_epv['team'] == row['away_team']]['EPV'].values[0]        if not match_epv.empty else 0
-        gc_home_epv = match_epv[match_epv['team'] == row['home_team']]['competitive_epv'].values[0] \
-            if (has_gc_epv and not match_epv.empty) else home_epv
-        gc_away_epv = match_epv[match_epv['team'] == row['away_team']]['competitive_epv'].values[0] \
-            if (has_gc_epv and not match_epv.empty) else away_epv
+        # ── xT lookup ─────────────────────────────────────────────────────────
+        match_xt = xt_df[xt_df['match_id'] == match_id]
+        home_xt  = match_xt[match_xt['team'] == row['home_team']]['xT'].values[0]        if not match_xt.empty else 0
+        away_xt  = match_xt[match_xt['team'] == row['away_team']]['xT'].values[0]        if not match_xt.empty else 0
+        gc_home_xt = match_xt[match_xt['team'] == row['home_team']]['competitive_xt'].values[0] \
+            if (has_gc_xt and not match_xt.empty) else home_xt
+        gc_away_xt = match_xt[match_xt['team'] == row['away_team']]['competitive_xt'].values[0] \
+            if (has_gc_xt and not match_xt.empty) else away_xt
 
         # ── Distribution 1: actual goals ──────────────────────────────────────
         actual_goals_dist = {
@@ -504,9 +547,9 @@ def create_weighted_scoreline_data(
             for sp in simulate_game_poisson_binomial(home_xg_probs, away_xg_probs, max_goals)
         }
 
-        # ── Distribution 5: EPV ───────────────────────────────────────────────
-        epv_dist = {
-            (h, a): poisson.pmf(h, max(home_epv, 1e-9)) * poisson.pmf(a, max(away_epv, 1e-9))
+        # ── Distribution 5: xT ────────────────────────────────────────────────
+        xt_dist = {
+            (h, a): poisson.pmf(h, max(home_xt, 1e-9)) * poisson.pmf(a, max(away_xt, 1e-9))
             for h, a in product(range(max_goals + 1), range(max_goals + 1))
         }
 
@@ -534,9 +577,9 @@ def create_weighted_scoreline_data(
             for sp in simulate_game_poisson_binomial(gc_home_xg_probs, gc_away_xg_probs, max_goals)
         }
 
-        # ── gc Distribution 5: competitive EPV ────────────────────────────────
-        gc_epv_dist = {
-            (h, a): poisson.pmf(h, max(gc_home_epv, 1e-9)) * poisson.pmf(a, max(gc_away_epv, 1e-9))
+        # ── gc Distribution 5: competitive xT ─────────────────────────────────
+        gc_xt_dist = {
+            (h, a): poisson.pmf(h, max(gc_home_xt, 1e-9)) * poisson.pmf(a, max(gc_away_xt, 1e-9))
             for h, a in product(range(max_goals + 1), range(max_goals + 1))
         }
 
@@ -550,12 +593,12 @@ def create_weighted_scoreline_data(
                 xg_weight         * xg_total_dist.get(key, 0.0)     +
                 psxg_weight       * psxg_lookup.get(key, 0.0)        +
                 bernoulli_weight  * bernoulli_lookup.get(key, 0.0)   +
-                epv_weight        * epv_dist.get(key, 0.0)           +
+                xt_weight         * xt_dist.get(key, 0.0)            +
                 gc_goals_weight   * gc_actual_goals_dist.get(key, 0.0) +
                 gc_xg_weight      * gc_xg_total_dist.get(key, 0.0)    +
                 gc_psxg_weight    * gc_psxg_lookup.get(key, 0.0)       +
                 gc_bernoulli_weight * gc_bernoulli_lookup.get(key, 0.0) +
-                gc_epv_weight     * gc_epv_dist.get(key, 0.0)
+                gc_xt_weight      * gc_xt_dist.get(key, 0.0)
             )
 
             if final_weight < min_prob_threshold and key != (actual_home, actual_away):
@@ -612,24 +655,29 @@ def load_and_process_data(
     Forwards all **scoreline_kwargs to create_weighted_scoreline_data, including
     gc_* weight parameters for garbage-time-cleaned signals (default 0 = disabled).
     """
-    match_df, shot_df, red_df, epv_df, all_shots_df, events_df = load_football_data(
+    match_df, shot_df, red_df, xt_df, all_shots_df, events_df, xt_actions_df = load_football_data(
         db_path, league, season, start=start, end=end
     )
 
-    # Compute competitive EPV from WhoScored events and merge into epv_df
-    if not events_df.empty:
-        competitive_epv_df = compute_competitive_epv(events_df)
-        if not competitive_epv_df.empty:
-            epv_df = epv_df.merge(
-                competitive_epv_df,
+    # Rescale gross xT onto the same goals-equivalent scale as xG (see
+    # XT_TO_GOALS_SCALE above) before it's used as a Poisson rate.
+    xt_df['xT'] = xt_df['xT'] * XT_TO_GOALS_SCALE
+
+    # Compute competitive xT from WhoScored xt_actions and merge into xt_df
+    if not events_df.empty and not xt_actions_df.empty:
+        competitive_xt_df = compute_competitive_xt(events_df, xt_actions_df)
+        if not competitive_xt_df.empty:
+            competitive_xt_df['competitive_xt'] = competitive_xt_df['competitive_xt'] * XT_TO_GOALS_SCALE
+            xt_df = xt_df.merge(
+                competitive_xt_df,
                 on=['match_date', 'team'],
                 how='left',
             )
-            # Fallback: use full EPV where no WhoScored data available
-            epv_df['competitive_epv'] = epv_df['competitive_epv'].fillna(epv_df['EPV'])
+            # Fallback: use full xT where no WhoScored data available
+            xt_df['competitive_xt'] = xt_df['competitive_xt'].fillna(xt_df['xT'])
 
     weighted_df  = create_weighted_scoreline_data(
-        match_df, shot_df, red_df, epv_df, all_shots_df, **scoreline_kwargs
+        match_df, shot_df, red_df, xt_df, all_shots_df, **scoreline_kwargs
     )
 
     processed_df, team_mapping, n_teams = prepare_model_data(weighted_df)
