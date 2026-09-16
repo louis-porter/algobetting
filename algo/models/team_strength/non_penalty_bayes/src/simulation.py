@@ -321,7 +321,19 @@ def get_actual_standings(actual_results_list, teams):
 
 # ── Form rating (no model needed — derived from weighted scoreline data) ──────
 
-def form_net_rating(weighted_df, home_pen_rate, away_pen_rate, pen_multipliers=None):
+# Red-card attack/defence effects (log scale), same covariate as model.py's
+# red_att_effect/red_def_effect. Point estimates from the 2025-26 season refit
+# (the first fit where home_red_proportion/away_red_proportion were actually
+# populated -- see project_red_card_covariate memory) rather than model.py's
+# pre-fit prior guesses, since this function has no trace of its own to read a
+# live posterior from.
+RED_ATT_EFFECT = -0.588
+RED_DEF_EFFECT = 0.428
+
+
+def form_net_rating(weighted_df, home_pen_rate, away_pen_rate, pen_multipliers=None,
+                     opponent_ratings=None,
+                     red_att_effect=RED_ATT_EFFECT, red_def_effect=RED_DEF_EFFECT):
     """
     Weighted expected-goals net rating from scoreline data.
     Does NOT require a fitted model — uses the blended scoreline distributions.
@@ -335,6 +347,24 @@ def form_net_rating(weighted_df, home_pen_rate, away_pen_rate, pen_multipliers=N
     `net_rating` itself either way — the same per-team addition goes into both `gf_avg` and
     `ga_avg`, so it cancels in the difference — it only affects the absolute `gf_avg`/
     `ga_avg` values shown (which do get surfaced, e.g. in the Substack export).
+
+    Red cards: each match's expected goals are cleaned of the estimated red-card
+    effect before aggregation -- home_red_proportion/away_red_proportion (fraction
+    of the match that side played a man down, from data_utils.compute_red_card_proportions)
+    are divided back out via exp(prop * red_att_effect - opponent_prop * red_def_effect),
+    the same functional form model.py fits on. So a team that happened to face a
+    10-man side, or that had its own man sent off, has that one-off distortion
+    removed from its form rating rather than baked into it.
+
+    `opponent_ratings`, if given, is a DataFrame indexed by team with 'goals_for'/
+    'goals_against' columns (e.g. outputs.ipynb's `ratings_df`, from the fitted
+    model's att_str/def_str -- see that notebook's cell 10) used for a
+    strength-of-schedule adjustment: each match's contribution to a team's gf/ga
+    is corrected by how far that match's specific opponent sits from the league's
+    average attack/defence, so a form window front-loaded with the run-in's easiest
+    (or hardest) fixtures doesn't get taken at face value. Left out (None,
+    default), no SOS adjustment is applied -- the function stays usable standalone,
+    without requiring a model fit first.
     """
     if weighted_df.empty:
         return pd.DataFrame(columns=['gf_avg', 'ga_avg', 'net_rating'])
@@ -345,19 +375,52 @@ def form_net_rating(weighted_df, home_pen_rate, away_pen_rate, pen_multipliers=N
               'exp_away_goals': (x['away_goals'] * x['weight']).sum() / x['weight'].sum(),
               'match_weight':    x['weight'].sum(),
           })).reset_index())
-    mm = weighted_df[['match_id','home_team','away_team']].drop_duplicates()
+    mm = weighted_df[['match_id', 'home_team', 'away_team',
+                       'home_red_proportion', 'away_red_proportion']].drop_duplicates('match_id')
     me = me.merge(mm, on='match_id')
+
+    # ── Red-card cleaning ────────────────────────────────────────────────────
+    home_factor = np.exp(me['home_red_proportion'] * red_att_effect
+                          - me['away_red_proportion'] * red_def_effect)
+    away_factor = np.exp(me['away_red_proportion'] * red_att_effect
+                          - me['home_red_proportion'] * red_def_effect)
+    me['exp_home_goals'] = me['exp_home_goals'] / home_factor
+    me['exp_away_goals'] = me['exp_away_goals'] / away_factor
+
+    # ── Strength-of-schedule adjustment ──────────────────────────────────────
+    # Four separate columns, not two: exp_home_goals plays a "GF" role for the
+    # home team (confound: the away side's defence) but also a "GA" role for
+    # the away team (confound: the home side's attack the away side just faced)
+    # -- same raw number, opposite-purpose correction, so it can't be adjusted
+    # once and reused for both.
+    me['home_gf'] = me['exp_home_goals']
+    me['home_ga'] = me['exp_away_goals']
+    me['away_gf'] = me['exp_away_goals']
+    me['away_ga'] = me['exp_home_goals']
+
+    if opponent_ratings is not None:
+        league_avg_att = opponent_ratings['goals_for'].mean()
+        league_avg_def = opponent_ratings['goals_against'].mean()
+        home_def = me['home_team'].map(opponent_ratings['goals_against'])
+        home_att = me['home_team'].map(opponent_ratings['goals_for'])
+        away_def = me['away_team'].map(opponent_ratings['goals_against'])
+        away_att = me['away_team'].map(opponent_ratings['goals_for'])
+
+        me['home_gf'] = (me['home_gf'] - (away_def - league_avg_def)).clip(lower=0.05)
+        me['home_ga'] = (me['home_ga'] - (away_att - league_avg_att)).clip(lower=0.05)
+        me['away_gf'] = (me['away_gf'] - (home_def - league_avg_def)).clip(lower=0.05)
+        me['away_ga'] = (me['away_ga'] - (home_att - league_avg_att)).clip(lower=0.05)
 
     pen_avg = (home_pen_rate + away_pen_rate) / 2
 
     home_s = me.groupby('home_team').apply(lambda x: pd.Series({
-        'gf': (x['exp_home_goals'] * x['match_weight']).sum(),
-        'ga': (x['exp_away_goals'] * x['match_weight']).sum(),
+        'gf': (x['home_gf'] * x['match_weight']).sum(),
+        'ga': (x['home_ga'] * x['match_weight']).sum(),
         'w':   x['match_weight'].sum(),
     }))
     away_s = me.groupby('away_team').apply(lambda x: pd.Series({
-        'gf': (x['exp_away_goals'] * x['match_weight']).sum(),
-        'ga': (x['exp_home_goals'] * x['match_weight']).sum(),
+        'gf': (x['away_gf'] * x['match_weight']).sum(),
+        'ga': (x['away_ga'] * x['match_weight']).sum(),
         'w':   x['match_weight'].sum(),
     }))
 

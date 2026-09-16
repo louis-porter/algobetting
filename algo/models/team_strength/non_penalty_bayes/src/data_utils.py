@@ -418,6 +418,34 @@ def calculate_red_card_penalty(red_cards_df: pd.DataFrame, match_id: str) -> flo
     else:                          return 0.05
 
 
+def compute_red_card_proportions(red_df: pd.DataFrame, match_ids, match_length: float = 90.0) -> pd.DataFrame:
+    """
+    Per match_id: fraction of the match each side played a man down, keyed off
+    the earliest red card for that side (a second card to the same side isn't
+    modelled as "two men down" — model.py's red_att_effect/red_def_effect is a
+    single scalar covariate, so only the longest-duration disadvantage per side
+    is used). Feeds home_red_proportion/away_red_proportion in build_and_sample_model.
+
+    Returns one row per match_id in `match_ids`, with 0.0 for matches that have
+    no red card on that side (including matches missing from red_df entirely).
+    """
+    base = pd.DataFrame({'match_id': pd.unique(match_ids)})
+
+    if red_df.empty:
+        return base.assign(home_red_proportion=0.0, away_red_proportion=0.0)
+
+    earliest = red_df.groupby(['match_id', 'side'])['time'].min().reset_index()
+    earliest['proportion'] = ((match_length - earliest['time']) / match_length).clip(lower=0.0, upper=1.0)
+
+    pivot = (earliest
+             .pivot(index='match_id', columns='side', values='proportion')
+             .reindex(columns=['home', 'away']))
+    pivot = pivot.rename(columns={'home': 'home_red_proportion', 'away': 'away_red_proportion'})
+
+    return (base.merge(pivot, on='match_id', how='left')
+                .fillna({'home_red_proportion': 0.0, 'away_red_proportion': 0.0}))
+
+
 def create_weighted_scoreline_data(
     match_df: pd.DataFrame,
     shot_df: pd.DataFrame,
@@ -474,12 +502,17 @@ def create_weighted_scoreline_data(
 
     has_gc_xt = 'competitive_xt' in xt_df.columns
 
+    red_props = compute_red_card_proportions(red_df, match_df['match_id']).set_index('match_id')
+
     for _, row in match_df.iterrows():
         match_id    = row['match_id']
         match_shots = shot_df[shot_df['match_id'] == match_id]
 
         if match_shots.empty:
             continue
+
+        home_red_prop = float(red_props.at[match_id, 'home_red_proportion'])
+        away_red_prop = float(red_props.at[match_id, 'away_red_proportion'])
 
         actual_home = int(row['home_goals'])
         actual_away = int(row['away_goals'])
@@ -614,6 +647,8 @@ def create_weighted_scoreline_data(
                 'weight':     final_weight,
                 'days_ago':   row['days_ago'],
                 'is_actual':  key == (actual_home, actual_away),
+                'home_red_proportion': home_red_prop,
+                'away_red_proportion': away_red_prop,
             })
 
         total_m_weight = sum(s['weight'] for s in match_scorelines)

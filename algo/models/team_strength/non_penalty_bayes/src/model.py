@@ -8,9 +8,10 @@ def build_and_sample_model(train_df, n_teams, current_season=None, league=None,
                           trace=5000, tune=2500, team_mapping=None, model_version="v1",
                           manual_att_priors=None, manual_def_priors=None,
                           red_card_priors=None,
-                          home_adv_prior=None, baseline_prior=None):
+                          home_adv_prior=None, baseline_prior=None,
+                          random_seed=None):
     """Build and sample the football model with manual team priors and red card effects
-    
+
     Parameters:
     -----------
     manual_att_priors : dict or list, optional
@@ -37,7 +38,16 @@ def build_and_sample_model(train_df, n_teams, current_season=None, league=None,
     baseline_prior : (mu, sigma) tuple, optional
         Prior for the global baseline scoring-rate parameter. Defaults to (log(1.26), 0.1)
         if None. Same early-season sample-size reasoning as home_adv_prior.
-    
+    random_seed : int or list of int, optional
+        Seeds pm.sample's RNG (chain start jitter, NUTS momentum resampling, accept/reject).
+        None (default) leaves every call unseeded -- matches existing behaviour, so nothing
+        changes unless a caller opts in. Passing a fixed value makes reruns on the same
+        train_df/config reproducible, which is useful for isolating "did this code change
+        actually move the estimate" from ordinary Monte Carlo noise -- but it does NOT
+        reduce that noise, it just freezes which single draw of it you see. Passed straight
+        through to pm.sample; PyMC forwards it to blackjax's own JAX PRNG for
+        nuts_sampler='blackjax' below, so it seeds this sampler too, not just PyMC's default.
+
     Expected columns in train_df for red card modeling:
     -----------
     home_red_proportion : float
@@ -169,7 +179,7 @@ def build_and_sample_model(train_df, n_teams, current_season=None, league=None,
         pm.Potential("weighted_away_goals", pm.math.sum(weights * away_logp))
 
         # Sample
-        trace = pm.sample(trace=trace, tune=tune, cores=4, nuts_sampler='blackjax', 
-                         return_inferencedata=True, progressbar=False)
+        trace = pm.sample(trace=trace, tune=tune, cores=4, nuts_sampler='blackjax',
+                         return_inferencedata=True, progressbar=False, random_seed=random_seed)
         
     return model, trace
