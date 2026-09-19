@@ -66,12 +66,15 @@ def build_and_sample_model(train_df, n_teams, current_season=None, league=None,
     home_red_prop = train_df.get('home_red_proportion', pd.Series(np.zeros(len(train_df)))).values
     away_red_prop = train_df.get('away_red_proportion', pd.Series(np.zeros(len(train_df)))).values
     
-    # Set default red card priors if not provided
+    # Set default red card priors if not provided. Point estimates from the
+    # 2025-26 season refit (post sign-fix + red-card weight discount, see
+    # simulation.py's RED_ATT_EFFECT/RED_DEF_EFFECT and project_red_card_covariate
+    # memory).
     if red_card_priors is None:
         red_card_priors = {
-            'att_effect_mu': -0.60,      # ~-40% scoring reduction
+            'att_effect_mu': -0.64,      # ~-47% scoring reduction
             'att_effect_sigma': 0.2,     # Allow uncertainty
-            'def_effect_mu': 0.55,       # ~+28% more goals conceded
+            'def_effect_mu': 0.31,       # ~+36% more goals conceded
             'def_effect_sigma': 0.2      # Allow uncertainty
         }
    
@@ -155,16 +158,16 @@ def build_and_sample_model(train_df, n_teams, current_season=None, league=None,
             def_str[away_idx] + 
             home_adv +
             home_red_prop * red_att_effect +      # Home attacking impaired
-            away_red_prop * (-red_def_effect)     # Away defending impaired (helps home score)
+            away_red_prop * red_def_effect        # Away defending impaired (helps home score)
         )
-        
+
         # Away team scoring: reduced if away has red, increased if home has red (weaker defense)
         away_goals_mu = pm.math.exp(
-            baseline + 
-            att_str[away_idx] + 
+            baseline +
+            att_str[away_idx] +
             def_str[home_idx] +
             away_red_prop * red_att_effect +      # Away attacking impaired
-            home_red_prop * (-red_def_effect)     # Home defending impaired (helps away score)
+            home_red_prop * red_def_effect        # Home defending impaired (helps away score)
         )
 
         try:

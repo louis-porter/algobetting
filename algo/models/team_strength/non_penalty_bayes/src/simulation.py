@@ -31,11 +31,18 @@ import pandas as pd
 # ── Match prediction ──────────────────────────────────────────────────────────
 
 def predict_match(home_team, away_team, trace, team_mapping,
-                  home_pen_rate, away_pen_rate, pen_multipliers=None):
+                  home_pen_rate, away_pen_rate, pen_multipliers=None, pen_defense_multipliers=None):
     """`pen_multipliers`, if given, is a {team: multiplier} dict (see
-    src.penalties.compute_penalty_multipliers) scaling home_pen_rate/away_pen_rate by each
-    side's own relative team quality instead of applying the same flat rate to every team.
-    Defaults to 1.0 for any team not in the dict, or when pen_multipliers is None."""
+    src.penalties.compute_penalty_multipliers, or the attack side of
+    src.penalties.compute_penalty_axis_multipliers) scaling home_pen_rate/away_pen_rate by
+    each side's own relative quality instead of applying the same flat rate to every team.
+    Defaults to 1.0 for any team not in the dict, or when pen_multipliers is None.
+
+    `pen_defense_multipliers`, if given, is the opponent-side counterpart (see the defense
+    side of src.penalties.compute_penalty_axis_multipliers): it scales a side's penalty
+    rate by the OPPONENT's own pens-conceded tendency, not its own. Defaults to 1.0
+    (no-op) when not given, so existing single-sided callers (pen_multipliers only) are
+    unaffected."""
     hi = team_mapping[home_team]
     ai = team_mapping[away_team]
 
@@ -48,9 +55,11 @@ def predict_match(home_team, away_team, trace, team_mapping,
 
     home_mult = pen_multipliers.get(home_team, 1.0) if pen_multipliers else 1.0
     away_mult = pen_multipliers.get(away_team, 1.0) if pen_multipliers else 1.0
+    away_def_mult = pen_defense_multipliers.get(away_team, 1.0) if pen_defense_multipliers else 1.0
+    home_def_mult = pen_defense_multipliers.get(home_team, 1.0) if pen_defense_multipliers else 1.0
 
-    h_lam = np.exp(base + hadv + att[:, hi] + defn[:, ai]) + home_pen_rate * home_mult
-    a_lam = np.exp(base         + att[:, ai] + defn[:, hi]) + away_pen_rate * away_mult
+    h_lam = np.exp(base + hadv + att[:, hi] + defn[:, ai]) + home_pen_rate * home_mult * away_def_mult
+    a_lam = np.exp(base         + att[:, ai] + defn[:, hi]) + away_pen_rate * away_mult * home_def_mult
 
     hg = np.random.poisson(h_lam)
     ag = np.random.poisson(a_lam)
@@ -68,7 +77,8 @@ def predict_match(home_team, away_team, trace, team_mapping,
 
 def precompute_expected_goals(trace, team_mapping, df_actual,
                               home_pen_rate, away_pen_rate,
-                              remaining_fixtures=None, pen_multipliers=None):
+                              remaining_fixtures=None, pen_multipliers=None,
+                              pen_defense_multipliers=None):
     """
     Returns
     -------
@@ -111,7 +121,8 @@ def precompute_expected_goals(trace, team_mapping, df_actual,
             if home not in team_mapping or away not in team_mapping:
                 continue
             pred = predict_match(home, away, trace, team_mapping,
-                                 home_pen_rate, away_pen_rate, pen_multipliers=pen_multipliers)
+                                 home_pen_rate, away_pen_rate, pen_multipliers=pen_multipliers,
+                                 pen_defense_multipliers=pen_defense_multipliers)
             xg_cache[(home, away)] = (pred['home_goals_expected'], pred['away_goals_expected'])
 
         # Every played game → actual_results list (duplicates preserved)
@@ -137,7 +148,8 @@ def precompute_expected_goals(trace, team_mapping, df_actual,
                     continue
                 key  = (home, away)
                 pred = predict_match(home, away, trace, team_mapping,
-                                     home_pen_rate, away_pen_rate, pen_multipliers=pen_multipliers)
+                                     home_pen_rate, away_pen_rate, pen_multipliers=pen_multipliers,
+                                     pen_defense_multipliers=pen_defense_multipliers)
                 hxg, axg = pred['home_goals_expected'], pred['away_goals_expected']
 
                 if key in played:
@@ -200,13 +212,15 @@ def simulate_full_season_fast(actual_results, expected_goals, teams):
 
 def run_multiple_seasons(n_simulations, trace, team_mapping, df_actual,
                          home_pen_rate, away_pen_rate,
-                         remaining_fixtures=None, pen_multipliers=None):
+                         remaining_fixtures=None, pen_multipliers=None,
+                         pen_defense_multipliers=None):
     teams   = list(team_mapping.keys())
     n       = len(teams)
 
     actual_results, expected_goals = precompute_expected_goals(
         trace, team_mapping, df_actual, home_pen_rate, away_pen_rate,
-        remaining_fixtures=remaining_fixtures, pen_multipliers=pen_multipliers)
+        remaining_fixtures=remaining_fixtures, pen_multipliers=pen_multipliers,
+        pen_defense_multipliers=pen_defense_multipliers)
 
     acc = {k: np.zeros(n, dtype=np.float64) for k in
            ['pts', 'pts_sq', 'w', 'd', 'l', 'gf', 'ga', 'xgf', 'xga', 'pos']}
@@ -326,9 +340,18 @@ def get_actual_standings(actual_results_list, teams):
 # (the first fit where home_red_proportion/away_red_proportion were actually
 # populated -- see project_red_card_covariate memory) rather than model.py's
 # pre-fit prior guesses, since this function has no trace of its own to read a
-# live posterior from.
-RED_ATT_EFFECT = -0.588
-RED_DEF_EFFECT = 0.428
+# live posterior from. Refit 2026-09-16 twice, same day: first after fixing a
+# sign bug in both this module's cross-term and model.py's home_goals_mu/
+# away_goals_mu (the opponent's red-card term was being subtracted instead of
+# added, so a team that benefited from an opponent's red card had its "cleaned"
+# rating inflated rather than corrected back down -- e.g. Brighton's Power
+# Ranking was #1 largely on the back of two red-carded opponents before that
+# fix); then again after adding data_utils.red_card_weight_discount (down-
+# weights a red-card match's contribution on top of this centering correction --
+# the correction alone doesn't express how much less we trust a linear
+# extrapolation from a small, noisy red-card sample).
+RED_ATT_EFFECT = -0.636
+RED_DEF_EFFECT = 0.313
 
 
 def form_net_rating(weighted_df, home_pen_rate, away_pen_rate, pen_multipliers=None,
@@ -351,10 +374,14 @@ def form_net_rating(weighted_df, home_pen_rate, away_pen_rate, pen_multipliers=N
     Red cards: each match's expected goals are cleaned of the estimated red-card
     effect before aggregation -- home_red_proportion/away_red_proportion (fraction
     of the match that side played a man down, from data_utils.compute_red_card_proportions)
-    are divided back out via exp(prop * red_att_effect - opponent_prop * red_def_effect),
-    the same functional form model.py fits on. So a team that happened to face a
-    10-man side, or that had its own man sent off, has that one-off distortion
-    removed from its form rating rather than baked into it.
+    are divided back out via exp(prop * red_att_effect + opponent_prop * red_def_effect),
+    the same functional form model.py fits on (red_def_effect fits positive -- "concedes
+    more when down a man" -- so an *opponent's* card is a positive contributor here, same
+    sign as the team's own card is negative via red_att_effect). So a team that happened to
+    face a 10-man side, or that had its own man sent off, has that one-off distortion
+    removed from its form rating rather than baked into it. (Before 2026-09-16 this line
+    subtracted the opponent term, which inverted the correction into an amplifier -- see
+    the same-day sign fix in model.py's home_goals_mu/away_goals_mu.)
 
     `opponent_ratings`, if given, is a DataFrame indexed by team with 'goals_for'/
     'goals_against' columns (e.g. outputs.ipynb's `ratings_df`, from the fitted
@@ -381,9 +408,9 @@ def form_net_rating(weighted_df, home_pen_rate, away_pen_rate, pen_multipliers=N
 
     # ── Red-card cleaning ────────────────────────────────────────────────────
     home_factor = np.exp(me['home_red_proportion'] * red_att_effect
-                          - me['away_red_proportion'] * red_def_effect)
+                          + me['away_red_proportion'] * red_def_effect)
     away_factor = np.exp(me['away_red_proportion'] * red_att_effect
-                          - me['home_red_proportion'] * red_def_effect)
+                          + me['home_red_proportion'] * red_def_effect)
     me['exp_home_goals'] = me['exp_home_goals'] / home_factor
     me['exp_away_goals'] = me['exp_away_goals'] / away_factor
 

@@ -130,16 +130,16 @@ def build_and_sample_model(train_df, n_teams, current_season=None, league=None,
             def_str[away_idx] + 
             home_adv +
             home_red_prop * red_att_effect +      # Home attacking impaired
-            away_red_prop * (-red_def_effect)     # Away defending impaired (helps home score)
+            away_red_prop * red_def_effect        # Away defending impaired (helps home score)
         )
-        
+
         # Away team scoring: reduced if away has red, increased if home has red (weaker defense)
         away_goals_mu = pm.math.exp(
-            baseline + 
-            att_str[away_idx] + 
+            baseline +
+            att_str[away_idx] +
             def_str[home_idx] +
             away_red_prop * red_att_effect +      # Away attacking impaired
-            home_red_prop * (-red_def_effect)     # Home defending impaired (helps away score)
+            home_red_prop * red_def_effect        # Home defending impaired (helps away score)
         )
 
         try:

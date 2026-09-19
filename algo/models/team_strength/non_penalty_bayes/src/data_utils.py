@@ -446,6 +446,28 @@ def compute_red_card_proportions(red_df: pd.DataFrame, match_ids, match_length: 
                 .fillna({'home_red_proportion': 0.0, 'away_red_proportion': 0.0}))
 
 
+# How much to trust a match's contribution once it's been through the red-att/red-def
+# cleaning above. That cleaning re-centers the estimate (a team down a man for most of
+# the match gets its expected goals corrected back toward what they'd likely have done
+# at full strength) -- but it's a linear extrapolation from a small, noisy sample
+# (red_def_effect alone carries ~40% relative posterior uncertainty), so a heavily
+# red-card-affected match should still count for less than an ordinary 11-v-11 one even
+# after correction. RED_CARD_WEIGHT_K=0.7 means a full-match man-down (proportion -> 1,
+# i.e. an early red) discounts weight down to 0.3 of normal -- chosen to match the flat
+# 0.3 red-card weight penalty already used for any-red-card matches in the older
+# infra/data/feature_engineering/param_optimisation.py pipeline, so a maximal case here
+# lines up with that established discount rather than inventing an unrelated number. A
+# late red (proportion near 0) barely discounts at all, unlike that flat pipeline's
+# binary all-or-nothing 0.3.
+RED_CARD_WEIGHT_K = 0.7
+
+
+def red_card_weight_discount(home_red_proportion: float, away_red_proportion: float,
+                              k: float = RED_CARD_WEIGHT_K) -> float:
+    """Match-level weight multiplier, 1.0 (no red card) down to 1-k (a red in minute 0)."""
+    return 1.0 - k * max(home_red_proportion, away_red_proportion)
+
+
 def create_weighted_scoreline_data(
     match_df: pd.DataFrame,
     shot_df: pd.DataFrame,
@@ -653,9 +675,10 @@ def create_weighted_scoreline_data(
 
         total_m_weight = sum(s['weight'] for s in match_scorelines)
         time_decay     = np.exp(-decay_rate * row['days_ago'])
+        red_discount   = red_card_weight_discount(home_red_prop, away_red_prop)
 
         for s in match_scorelines:
-            s['weight'] = (s['weight'] / total_m_weight) * time_decay
+            s['weight'] = (s['weight'] / total_m_weight) * time_decay * red_discount
             expanded_data.append(s)
 
     return pd.DataFrame(expanded_data)
